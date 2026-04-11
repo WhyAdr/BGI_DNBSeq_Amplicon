@@ -63,7 +63,7 @@ rare_shannon <- do.call(rbind, lapply(rownames(otu_t), function(samp) {
     set.seed(42)  # seed once per sample for reproducible rarefaction
     shannon_vals <- sapply(valid_steps, function(d) {
         sub <- rrarefy(row, d)
-        diversity(sub, index = "shannon")
+        vegan::diversity(sub, index = "shannon")
     })
     data.frame(Sample = samp, Depth = valid_steps, Shannon = shannon_vals,
                Group = metadata[samp, "Group"], stringsAsFactors = FALSE)

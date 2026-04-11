@@ -102,7 +102,7 @@ diag(adj_mat) <- 0
 g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE,
                                   diag = FALSE)
 # Remove isolated nodes
-g <- delete.vertices(g, degree(g) == 0)
+g <- igraph::delete_vertices(g, igraph::degree(g) == 0)
 
 if (vcount(g) > 0) {
     # Edge colors: pink = positive, blue = negative (per BGI report)
@@ -116,7 +116,7 @@ if (vcount(g) > 0) {
     png(file.path(output_dir, "CoOccurrence_Network.png"),
         width = 1000, height = 1000, res = 120)
     plot(g, vertex.label.cex = 0.5, vertex.label.color = "black",
-         layout = layout_with_fr(g),
+         layout = layout_with_fr(g, weights = abs(E(g)$weight)),
          main = "Co-occurrence Network (|rho|>0.6, P<0.05)")
     legend("bottomleft", legend = c("Positive", "Negative"),
            col = c("#FF69B4", "#4169E1"), lwd = 2, bty = "n")

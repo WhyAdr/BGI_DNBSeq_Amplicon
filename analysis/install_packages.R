@@ -12,7 +12,7 @@ cran_pkgs <- c(
     "vegan", "ggplot2", "reshape2", "ggpubr", "pheatmap",
     "randomForest", "caret", "pROC", "ape", "igraph",
     "cluster", "ade4", "VennDiagram", "UpSetR", "scales",
-    "futile.logger", "psych"
+    "futile.logger", "psych", "MLmetrics"
 )
 
 cat(sprintf("=== Installing %d CRAN packages ===\n", length(cran_pkgs)))

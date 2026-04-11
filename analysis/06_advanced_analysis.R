@@ -164,19 +164,33 @@ if (sum(env_cols) > 0) {
         otu_hel <- decostand(t(otu[, valid_samples_rda]), "hellinger")
 
         # --- DCA gradient-length selection (BGI Method M11) ---
-        dca_res <- decorana(otu_hel)
-        # DCA gradient length from rproj range (version-independent)
-        gradient_length <- max(dca_res$rproj[,1]) - min(dca_res$rproj[,1])
-        cat(sprintf("DCA axis 1 gradient length: %.2f SD units\n", gradient_length))
+        dca_res <- tryCatch(
+            decorana(otu_hel),
+            error = function(e) {
+                cat(sprintf("  DCA failed: %s\n  Defaulting to RDA.\n", e$message))
+                NULL
+            }
+        )
 
-        if (gradient_length > 4.0) {
-            ord_res <- cca(otu_hel ~ ., data = env_data)
-            method_label <- "CCA"
-            cat("Selected: CCA (unimodal response — gradient > 4.0)\n")
+        if (!is.null(dca_res)) {
+            # DCA gradient length from rproj range (version-independent)
+            gradient_length <- max(dca_res$rproj[,1]) - min(dca_res$rproj[,1])
+            cat(sprintf("DCA axis 1 gradient length: %.2f SD units\n", gradient_length))
+
+            if (gradient_length > 4.0) {
+                ord_res <- cca(otu_hel ~ ., data = env_data)
+                method_label <- "CCA"
+                cat("Selected: CCA (unimodal response — gradient > 4.0)\n")
+            } else {
+                ord_res <- rda(otu_hel ~ ., data = env_data)
+                method_label <- "RDA"
+                cat("Selected: RDA (linear response — gradient <= 4.0)\n")
+            }
         } else {
+            gradient_length <- NA
             ord_res <- rda(otu_hel ~ ., data = env_data)
             method_label <- "RDA"
-            cat("Selected: RDA (linear response — gradient <= 4.0)\n")
+            cat("DCA failed — defaulting to RDA (linear).\n")
         }
 
         png(file.path(output_dir, paste0(method_label, "_Plot.png")),

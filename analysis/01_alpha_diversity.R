@@ -42,8 +42,8 @@ alpha_metrics <- data.frame(
     Sobs = specnumber(otu, MARGIN = 2), # Observed species richness
     Chao1 = estimateR(t(otu))["S.chao1", ], # Estimated richness (Chao1)
     ACE = estimateR(t(otu))["S.ACE", ], # Estimated richness (ACE)
-    Shannon = diversity(t(otu), index = "shannon"), # Shannon diversity (accounts for richness & evenness)
-    Simpson = 1 - diversity(t(otu), index = "simpson"), # Dominance = Σp² (BGI Table 7 convention)
+    Shannon = vegan::diversity(t(otu), index = "shannon"), # Shannon diversity (accounts for richness & evenness)
+    Simpson = 1 - vegan::diversity(t(otu), index = "simpson"), # Dominance = Σp² (BGI Table 7 convention)
     Coverage = NA  # Placeholder — computed on rarefied data below
 )
 
@@ -86,7 +86,7 @@ if (num_groups < 2) {
 metrics_to_plot <- c("Sobs", "Chao1", "ACE", "Shannon", "Simpson")
 
 for (metric in metrics_to_plot) {
-    p <- ggplot(alpha_data, aes_string(x = group_col, y = metric, fill = group_col)) +
+    p <- ggplot(alpha_data, aes(x = .data[[group_col]], y = .data[[metric]], fill = .data[[group_col]])) +
         geom_boxplot(outlier.shape = NA, alpha = 0.8) +
         geom_jitter(width = 0.2, alpha = 0.5) +
         theme_bw() +

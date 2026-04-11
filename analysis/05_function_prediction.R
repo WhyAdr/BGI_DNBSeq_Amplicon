@@ -18,7 +18,10 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 if (file.exists(kegg_file) && file.size(kegg_file) > 0) {
-    kegg <- read.table(kegg_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t")
+    kegg_raw <- read.table(kegg_file, header = TRUE, check.names = FALSE, sep = "\t")
+    kegg_raw[, 1] <- make.unique(as.character(kegg_raw[, 1]))
+    rownames(kegg_raw) <- kegg_raw[, 1]
+    kegg <- kegg_raw[, -1]
     metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
     rownames(metadata) <- metadata[,1]
 

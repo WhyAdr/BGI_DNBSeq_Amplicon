@@ -57,11 +57,13 @@ for (pw_name in names(pathways)) {
         level_name <- gsub("\\.xls$", "", basename(pw_file))
         cat(sprintf("  Processing %s / %s...\n", pw_name, level_name))
 
-        pw_data <- tryCatch(
-            read.table(pw_file, header = TRUE, row.names = 1,
-                       check.names = FALSE, sep = "\t", comment.char = ""),
-            error = function(e) { cat(sprintf("    Error reading: %s\n", e$message)); NULL }
-        )
+        pw_data <- tryCatch({
+            pw_raw <- read.table(pw_file, header = TRUE, check.names = FALSE,
+                                 sep = "\t", comment.char = "")
+            pw_raw[, 1] <- make.unique(as.character(pw_raw[, 1]))
+            rownames(pw_raw) <- pw_raw[, 1]
+            pw_raw[, -1]
+        }, error = function(e) { cat(sprintf("    Error reading: %s\n", e$message)); NULL })
         if (is.null(pw_data)) next
 
         common <- intersect(colnames(pw_data), rownames(metadata))
