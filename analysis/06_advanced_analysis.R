@@ -11,7 +11,7 @@ library(vegan)
 library(ggplot2)
 
 # --- Dependency installation ---
-for (pkg in c("randomForest", "caret", "pROC")) {
+for (pkg in c("randomForest", "caret", "pROC", "MLmetrics")) {
     if (!requireNamespace(pkg, quietly = TRUE)) {
         install.packages(pkg, repos = "http://cran.us.r-project.org")
     }
@@ -204,8 +204,10 @@ if (sum(env_cols) > 0) {
                     sep = "\t", quote = FALSE)
 
         # Write DCA decision log
-        writeLines(sprintf("DCA gradient length: %.4f\nSelected method: %s\nThreshold: >4.0=CCA, <=4.0=RDA",
-                           gradient_length, method_label),
+        writeLines(sprintf("DCA gradient length: %s\nSelected method: %s\nThreshold: >4.0=CCA, <=4.0=RDA",
+                           if (is.na(gradient_length)) "N/A (DCA failed)" 
+                           else sprintf("%.4f", gradient_length),
+                           method_label),
                    file.path(output_dir, "DCA_model_selection.log"))
 
         cat(sprintf("%s analysis successfully plotted.\n", method_label))

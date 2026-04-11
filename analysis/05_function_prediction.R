@@ -19,9 +19,15 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 # --- Data Loading ---
 if (file.exists(kegg_file) && file.size(kegg_file) > 0) {
     kegg_raw <- read.table(kegg_file, header = TRUE, check.names = FALSE, sep = "\t")
-    kegg_raw[, 1] <- make.unique(as.character(kegg_raw[, 1]))
-    rownames(kegg_raw) <- kegg_raw[, 1]
-    kegg <- kegg_raw[, -1]
+    # Extract only numeric columns to sum (bypassing descriptors)
+    num_cols <- sapply(kegg_raw, is.numeric)
+    
+    # Aggregate duplicate pathway IDs by summing abundances
+    kegg_agg <- aggregate(kegg_raw[, num_cols, drop = FALSE], by = list(Pathway = kegg_raw[, 1]),
+                          FUN = sum, na.rm = TRUE)
+    rownames(kegg_agg) <- kegg_agg$Pathway
+    kegg_agg$Pathway <- NULL
+    kegg <- kegg_agg
     metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
     rownames(metadata) <- metadata[,1]
 

@@ -60,9 +60,14 @@ for (pw_name in names(pathways)) {
         pw_data <- tryCatch({
             pw_raw <- read.table(pw_file, header = TRUE, check.names = FALSE,
                                  sep = "\t", comment.char = "")
-            pw_raw[, 1] <- make.unique(as.character(pw_raw[, 1]))
-            rownames(pw_raw) <- pw_raw[, 1]
-            pw_raw[, -1]
+            
+            # Extract numeric columns for abundance aggregation (ignoring description columns)
+            num_cols <- sapply(pw_raw, is.numeric)
+            pw_agg <- aggregate(pw_raw[, num_cols, drop = FALSE], by = list(Pathway = pw_raw[, 1]),
+                                FUN = sum, na.rm = TRUE)
+            rownames(pw_agg) <- pw_agg$Pathway
+            pw_agg$Pathway <- NULL
+            pw_agg
         }, error = function(e) { cat(sprintf("    Error reading: %s\n", e$message)); NULL })
         if (is.null(pw_data)) next
 

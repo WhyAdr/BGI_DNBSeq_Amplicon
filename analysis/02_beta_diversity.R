@@ -120,7 +120,6 @@ if ("Group" %in% colnames(metadata) && length(unique(metadata$Group)) > 1) {
 # Unweighted UniFrac, and Pearson. Pearson distance = 1 - Pearson correlation.
 # Uses a 10-iteration Procrustes-aligned consensus PCoA for stability.
 cat("Computing Pearson dissimilarity...\n")
-otu_rare_t <- t(otu_rare)  # samples × OTUs
 cor_pearson <- cor(otu_rare, method = "pearson")
 dist_pearson <- as.dist(1 - cor_pearson)
 
