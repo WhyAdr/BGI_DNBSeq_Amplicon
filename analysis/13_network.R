@@ -13,14 +13,14 @@ library(igraph)
 library(pheatmap)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Result/Network"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Network"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 
 # --- Filter: keep OTUs with relative abundance > 0.5% (per BGI Section 12) ---
@@ -36,18 +36,13 @@ if (nrow(otu_filt) < 5) {
 
 cat(sprintf("Network analysis using %d OTUs (rel. abund. > 0.5%%).\n", nrow(otu_filt)))
 
-# --- Spearman Correlation ---
-cor_mat <- cor(t(otu_filt), method = "spearman")
+# --- Spearman Correlation (vectorized) ---
+if (!requireNamespace("psych", quietly = TRUE)) install.packages("psych")
+library(psych)
+cor_result <- corr.test(t(otu_filt), method = "spearman", adjust = "none")
+cor_mat <- cor_result$r
+p_mat <- cor_result$p
 n_otus <- nrow(otu_filt)
-
-p_mat <- matrix(1, n_otus, n_otus)
-for (i in 1:(n_otus - 1)) {
-    for (j in (i + 1):n_otus) {
-        test <- cor.test(as.numeric(otu_filt[i, ]), as.numeric(otu_filt[j, ]),
-                         method = "spearman", exact = FALSE)
-        p_mat[i, j] <- p_mat[j, i] <- test$p.value
-    }
-}
 
 # --- FDR Correction (Benjamini-Hochberg) ---
 # With many pairwise tests, FDR correction prevents false-positive correlations.
@@ -101,7 +96,7 @@ write.table(cor_results, file.path(output_dir, "Correlation_Result.xls"),
 # --- Network (BGI Section 12: Network Analysis) ---
 # Threshold: |rho| > 0.6 and p < 0.05 for network edges
 adj_mat <- cor_mat
-adj_mat[abs(cor_mat) < 0.6 | p_mat >= 0.05] <- 0
+adj_mat[abs(cor_mat) < 0.6 | p_adj_mat >= 0.05] <- 0
 diag(adj_mat) <- 0
 
 g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE,

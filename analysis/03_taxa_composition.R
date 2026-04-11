@@ -10,18 +10,18 @@ library(reshape2)
 library(pheatmap)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"  # OTU abundance matrix
-tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"  # Taxonomic annotation from RDP
-meta_file <- "../metadata.tsv"                    # Metdata mapping file
-output_dir <- "../BGI_Result/Barplot"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("tax_file") || is.null(tax_file)) tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Barplot"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")
+                  comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 tax <- read.table(tax_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")  # Header starts with #OTUId
+                  comment.char = "")  # Header starts with #OTUId
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
 

@@ -21,14 +21,14 @@ library(caret)
 library(pROC)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Result/Advanced"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Advanced"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")
+                  comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -165,18 +165,8 @@ if (sum(env_cols) > 0) {
 
         # --- DCA gradient-length selection (BGI Method M11) ---
         dca_res <- decorana(otu_hel)
-        # Canonical DCA axis 1 gradient length (in SD units).
-        # decorana stores axis lengths internally; extract from the
-        # printed summary or fall back to rproj range.
-        dca_out <- capture.output(summary(dca_res))
-        ax_line <- grep("^Axis lengths", dca_out, value = TRUE)
-        if (length(ax_line) > 0) {
-            ax_vals <- as.numeric(unlist(regmatches(ax_line,
-                           gregexpr("[0-9]+\\.?[0-9]*", ax_line))))
-            gradient_length <- ax_vals[1]
-        } else {
-            gradient_length <- max(dca_res$rproj[,1]) - min(dca_res$rproj[,1])
-        }
+        # DCA gradient length from rproj range (version-independent)
+        gradient_length <- max(dca_res$rproj[,1]) - min(dca_res$rproj[,1])
         cat(sprintf("DCA axis 1 gradient length: %.2f SD units\n", gradient_length))
 
         if (gradient_length > 4.0) {

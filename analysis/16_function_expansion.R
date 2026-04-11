@@ -12,10 +12,10 @@ library(reshape2)
 library(pheatmap)
 
 # --- Configuration ---
-meta_file <- "../metadata.tsv"
-base_dir <- "../BGI_Result/Picrust/Function_Prdeict"
-diff_dir <- "../BGI_Result/Picrust/Function_Diff"
-output_dir <- "../BGI_Result/Picrust"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("base_dir") || is.null(base_dir)) base_dir <- "../BGI_Result/Picrust/Function_Prdeict"
+if (!exists("diff_dir") || is.null(diff_dir)) diff_dir <- "../BGI_Result/Picrust/Function_Diff"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Picrust"
 dir.create(diff_dir, showWarnings = FALSE, recursive = TRUE)
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
@@ -59,7 +59,7 @@ for (pw_name in names(pathways)) {
 
         pw_data <- tryCatch(
             read.table(pw_file, header = TRUE, row.names = 1,
-                       check.names = FALSE, sep = "\t", comment.char = "#"),
+                       check.names = FALSE, sep = "\t", comment.char = ""),
             error = function(e) { cat(sprintf("    Error reading: %s\n", e$message)); NULL }
         )
         if (is.null(pw_data)) next

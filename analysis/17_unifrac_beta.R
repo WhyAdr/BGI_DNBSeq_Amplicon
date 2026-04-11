@@ -21,18 +21,18 @@ library(vegan)
 library(ggplot2)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
 # BGI provides FastTree-generated phylogenetic trees in two locations:
 #   Beta/<comparison>/ — OTU-level trees
 #   Genus_Tree/        — genus-level trees (per comparison)
-tree_dir_beta <- "../BGI_Result/Beta"
-tree_dir_genus <- "../BGI_Result/Genus_Tree"
-output_dir <- "../BGI_Result/Beta"
+if (!exists("tree_dir_beta") || is.null(tree_dir_beta)) tree_dir_beta <- "../BGI_Result/Beta"
+if (!exists("tree_dir_genus") || is.null(tree_dir_genus)) tree_dir_genus <- "../BGI_Result/Genus_Tree"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Beta"
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -89,8 +89,7 @@ find_tree <- function(comp_name = NULL) {
 }
 
 # comp_suffix is injected by 00_run_all_groups.R; defaults to NULL for standalone runs
-comp_name_env <- tryCatch(get("comp_suffix", envir = parent.frame()),
-                          error = function(e) NULL)
+comp_name_env <- if (exists("comp_suffix")) comp_suffix else NULL
 tree_file <- find_tree(comp_name_env)
 cat(sprintf("Final tree selection: %s\n", tree_file))
 

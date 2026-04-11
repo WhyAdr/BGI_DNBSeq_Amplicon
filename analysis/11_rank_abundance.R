@@ -10,16 +10,16 @@ library(ggplot2)
 library(vegan)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-rank_dir <- "../BGI_Result/OTU_Rank"
-cumul_dir <- "../BGI_Result/Cumulative_Curve"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("rank_dir") || is.null(rank_dir)) rank_dir <- "../BGI_Result/OTU_Rank"
+if (!exists("cumul_dir") || is.null(cumul_dir)) cumul_dir <- "../BGI_Result/Cumulative_Curve"
 dir.create(rank_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(cumul_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]

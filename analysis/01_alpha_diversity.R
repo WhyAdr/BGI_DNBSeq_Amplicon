@@ -14,15 +14,15 @@ library(reshape2)
 library(ggpubr)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"  # OTU abundance table
-meta_file <- "../metadata.tsv"                  # User-provided metadata mapping file
-output_dir <- "../BGI_Result/Alpha_Box"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Alpha_Box"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading & Preprocessing ---
 # Read OTU table (samples in columns, OTUs in rows)
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")  # Skip "# Construct" comment line
+                  comment.char = "", skip = 1)  # Skip "# Construct" junk line; preserve #OTU ID header
 # Remove the 'taxonomy' column (present in OTU_table_for_biom.txt)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 # Read metadata

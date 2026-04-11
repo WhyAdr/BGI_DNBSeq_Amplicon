@@ -15,16 +15,16 @@ library(VennDiagram)
 library(UpSetR)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-venn_dir <- "../BGI_Result/Venn"
-flower_dir <- "../BGI_Result/Flower"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("venn_dir") || is.null(venn_dir)) venn_dir <- "../BGI_Result/Venn"
+if (!exists("flower_dir") || is.null(flower_dir)) flower_dir <- "../BGI_Result/Flower"
 dir.create(venn_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(flower_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -77,7 +77,9 @@ write.table(flower_summary, file.path(flower_dir, "Flower_summary.xls"),
 
 # --- Venn (if ≤ 5 groups) ---
 if (length(groups) <= 5) {
-    futile.logger::flog.threshold(futile.logger::ERROR)  # suppress VennDiagram logs
+    if (requireNamespace("futile.logger", quietly = TRUE)) {
+        futile.logger::flog.threshold(futile.logger::ERROR)  # suppress VennDiagram logs
+    }
     venn.diagram(group_otus, filename = file.path(venn_dir, "Venn_OTUs.png"),
                  imagetype = "png", fill = rainbow(length(groups)),
                  alpha = 0.5, cat.cex = 1.2, cex = 1.5,

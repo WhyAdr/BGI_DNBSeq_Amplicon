@@ -10,14 +10,14 @@ library(vegan)
 library(ggplot2)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Result/Alpha_Rarefaction"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Alpha_Rarefaction"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -60,8 +60,8 @@ rare_shannon <- do.call(rbind, lapply(rownames(otu_t), function(samp) {
     row <- as.numeric(otu_t[samp, ])
     total <- sum(row)
     valid_steps <- steps[steps <= total]
+    set.seed(42)  # seed once per sample for reproducible rarefaction
     shannon_vals <- sapply(valid_steps, function(d) {
-        set.seed(42)
         sub <- rrarefy(row, d)
         diversity(sub, index = "shannon")
     })

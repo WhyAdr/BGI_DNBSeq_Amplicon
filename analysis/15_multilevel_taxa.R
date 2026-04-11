@@ -12,9 +12,9 @@ library(ggplot2)
 library(reshape2)
 
 # --- Configuration ---
-meta_file <- "../metadata.tsv"
-otu_dir <- "../BGI_Result/OTU"
-output_dir <- "../BGI_Result/Barplot"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Barplot"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
@@ -31,7 +31,7 @@ for (lvl in names(level_names)) {
     }
 
     taxa <- read.table(lvl_file, header = TRUE, row.names = 1, check.names = FALSE,
-                       sep = "\t", comment.char = "#")
+                       sep = "\t", comment.char = "")
     if ("taxonomy" %in% colnames(taxa)) taxa$taxonomy <- NULL
 
     common <- intersect(colnames(taxa), rownames(metadata))

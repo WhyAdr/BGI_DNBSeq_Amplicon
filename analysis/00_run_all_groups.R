@@ -39,6 +39,7 @@ analysis_scripts <- c(
     "02_beta_diversity.R",
     "03_taxa_composition.R",
     "04_differential_analysis.R",
+    "05_function_prediction.R",
     "06_advanced_analysis.R",
     "07_rarefaction_curves.R",
     "08_pca_analysis.R",
@@ -47,7 +48,9 @@ analysis_scripts <- c(
     "11_rank_abundance.R",
     "12_plsda.R",
     "13_network.R",
+    "14_enterotypes.R",
     "15_multilevel_taxa.R",
+    "16_function_expansion.R",
     "17_unifrac_beta.R",
     "18_nmds.R"
 )
@@ -96,15 +99,37 @@ for (comp_name in names(comparisons)) {
             # uses comp_suffix to auto-select comparison-specific phylogenetic trees)
             env$comp_suffix <- comp_suffix
 
-            # Override output_dir to include comparison suffix
-            # We'll parse the script to find its output_dir and append the suffix
+            # --- Output directory interception ---
+            # Parse script for all *_dir variable assignments and redirect outputs
+            # to BGI_Reproduced/ while keeping input dirs pointing to BGI_Result/
             script_lines <- readLines(script)
-            out_line <- grep("^output_dir\\s*<-", script_lines, value = TRUE)
-            if (length(out_line) > 0) {
-                # Extract the base output dir
-                base_dir <- gsub('.*"(.*)".*', '\\1', out_line[1])
-                env$output_dir <- file.path(base_dir, comp_suffix)
-                dir.create(env$output_dir, showWarnings = FALSE, recursive = TRUE)
+
+            # Input-only dirs — must NOT be redirected
+            input_only <- c("otu_dir", "tree_dir_beta", "tree_dir_genus", "base_dir")
+
+            # Find all lines like: var_name <- "../BGI_Result/..."
+            dir_pattern <- "^if\\s*\\(!exists.*\\)\\s+(\\w+_dir)\\s*<-\\s*\"([^\"]+)\""
+            bare_pattern <- "^(\\w+_dir)\\s*<-\\s*\"([^\"]+)\""
+
+            for (line in script_lines) {
+                # Try guarded pattern first, then bare assignment
+                m <- regmatches(line, regexec(dir_pattern, line))[[1]]
+                if (length(m) == 0) m <- regmatches(line, regexec(bare_pattern, line))[[1]]
+                if (length(m) < 3) next
+
+                var_name <- m[2]
+                var_path <- m[3]
+
+                # Skip input-only dirs
+                if (var_name %in% input_only) next
+
+                # Only redirect paths containing BGI_Result
+                if (!grepl("BGI_Result", var_path)) next
+
+                new_path <- gsub("BGI_Result", "BGI_Reproduced", var_path)
+                new_path <- file.path(new_path, comp_suffix)
+                env[[var_name]] <- new_path
+                dir.create(env[[var_name]], showWarnings = FALSE, recursive = TRUE)
             }
 
             source(script, local = env)

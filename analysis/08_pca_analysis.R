@@ -11,15 +11,15 @@
 library(ggplot2)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-otu_dir <- "../BGI_Result/OTU"
-output_dir <- "../BGI_Result/PCA"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/PCA"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
-                  sep = "\t", comment.char = "#")
+                  sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -66,7 +66,7 @@ for (lvl in names(level_names)) {
     if (!file.exists(lvl_file)) next
 
     taxa <- read.table(lvl_file, header = TRUE, row.names = 1, check.names = FALSE,
-                       sep = "\t", comment.char = "#")
+                       sep = "\t", comment.char = "")
     if ("taxonomy" %in% colnames(taxa)) taxa$taxonomy <- NULL
 
     common <- intersect(colnames(taxa), rownames(metadata))

@@ -10,14 +10,14 @@ library(vegan)
 library(ggplot2)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Result/Beta"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Beta"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")
+                  comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
@@ -121,7 +121,7 @@ if ("Group" %in% colnames(metadata) && length(unique(metadata$Group)) > 1) {
 # Uses a 10-iteration Procrustes-aligned consensus PCoA for stability.
 cat("Computing Pearson dissimilarity...\n")
 otu_rare_t <- t(otu_rare)  # samples × OTUs
-cor_pearson <- cor(t(otu_rare_t), method = "pearson")
+cor_pearson <- cor(otu_rare, method = "pearson")
 dist_pearson <- as.dist(1 - cor_pearson)
 
 # Export Pearson distance matrix
@@ -139,7 +139,7 @@ set.seed(42)
 pcoa_p_list <- vector("list", n_iter_p)
 for (i in seq_len(n_iter_p)) {
     r <- rrarefy(t(otu), sub_depth_p)
-    cor_r <- cor(t(r), method = "pearson")
+    cor_r <- cor(t(r), method = "pearson")  # r is 51×5358; t(r) is 5358×51; cor on columns → 51×51
     d_r <- as.dist(1 - cor_r)
     pcoa_p_list[[i]] <- cmdscale(d_r, k = 2, eig = FALSE)
 }

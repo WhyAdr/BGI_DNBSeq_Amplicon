@@ -9,18 +9,18 @@
 library(ggplot2)
 
 # --- Configuration ---
-otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Result/Diff"
+if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
+if (!exists("tax_file") || is.null(tax_file)) tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
+if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Diff"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")
+                  comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 tax <- read.table(tax_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
-                  comment.char = "#")
+                  comment.char = "")
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
 
@@ -126,7 +126,7 @@ write.table(t(lefse_in), file = file.path(lefse_dir, "lefse_input.txt"),
 # ==============================================================================
 # BGI output path: Diff/wilcoxon.test/each_level/{Phylum,Class,...,Species}/
 # Tests are run on taxonomically aggregated abundance tables at each level.
-otu_dir <- "../BGI_Result/OTU"
+if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
 level_map <- c("L2" = "Phylum", "L3" = "Class", "L4" = "Order",
                "L5" = "Family", "L6" = "Genus", "L7" = "Species")
 
@@ -140,7 +140,7 @@ for (lvl in names(level_map)) {
     }
 
     lvl_otu <- read.table(lvl_file, header = TRUE, row.names = 1,
-                          check.names = FALSE, sep = "\t", comment.char = "#")
+                          check.names = FALSE, sep = "\t", comment.char = "")
     if ("taxonomy" %in% colnames(lvl_otu)) lvl_otu$taxonomy <- NULL
 
     lvl_common <- intersect(colnames(lvl_otu), common_samples)
@@ -155,14 +155,17 @@ for (lvl in names(level_map)) {
 
     lvl_filtered <- lvl_otu[keep, , drop = FALSE]
 
-    if (length(groups) == 2) {
+    lvl_meta <- metadata[lvl_common, , drop = FALSE]
+    lvl_groups <- unique(lvl_meta$Group)
+
+    if (length(lvl_groups) == 2) {
         pvals <- apply(lvl_filtered, 1, function(x)
-            tryCatch(wilcox.test(x ~ metadata[lvl_common, "Group"])$p.value,
+            tryCatch(wilcox.test(x ~ lvl_meta$Group)$p.value,
                      error = function(e) NA))
         test_label <- "wilcoxon"
     } else {
         pvals <- apply(lvl_filtered, 1, function(x)
-            tryCatch(kruskal.test(x ~ metadata[lvl_common, "Group"])$p.value,
+            tryCatch(kruskal.test(x ~ lvl_meta$Group)$p.value,
                      error = function(e) NA))
         test_label <- "kruskal"
     }
@@ -174,14 +177,14 @@ for (lvl in names(level_map)) {
     )
 
     # Log2FC for this level
-    lvl_grp_means <- sapply(group_lvls, function(g)
-        rowMeans(lvl_rel[keep, metadata[lvl_common, "Group"] == g, drop = FALSE]))
-    if (length(group_lvls) == 2) {
+    lvl_grp_means <- sapply(lvl_groups, function(g)
+        rowMeans(lvl_rel[keep, lvl_meta$Group == g, drop = FALSE]))
+    if (length(lvl_groups) == 2) {
         lvl_results$log2FC <- log2((lvl_grp_means[, 2] + 1e-9) /
                                     (lvl_grp_means[, 1] + 1e-9))
     } else {
         # Multi-group: max |LFC| pairwise
-        n_g <- length(group_lvls)
+        n_g <- length(lvl_groups)
         mlfc <- rep(0, length(keep))
         mpair <- rep("", length(keep))
         for (a in 1:(n_g - 1)) {
@@ -189,7 +192,7 @@ for (lvl in names(level_map)) {
                 lfc_lvl <- log2((lvl_grp_means[, b] + 1e-9) / (lvl_grp_means[, a] + 1e-9))
                 upd <- abs(lfc_lvl) > abs(mlfc)
                 mlfc[upd] <- lfc_lvl[upd]
-                mpair[upd] <- paste0(group_lvls[b], "_vs_", group_lvls[a])
+                mpair[upd] <- paste0(lvl_groups[b], "_vs_", lvl_groups[a])
             }
         }
         lvl_results$log2FC <- mlfc
