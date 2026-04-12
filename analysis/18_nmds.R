@@ -43,6 +43,12 @@ if (nmds_res$stress >= 0.2) {
     warning("NMDS stress >= 0.2 — ordination may not adequately represent distances.")
 }
 
+# --- ANOSIM ---
+anosim_res <- NULL
+if (length(unique(metadata$Group)) > 1) {
+    anosim_res <- anosim(dist_bray, metadata$Group, permutations = 9999)
+}
+
 # --- Plot ---
 nmds_df <- data.frame(NMDS1 = nmds_res$points[, 1], NMDS2 = nmds_res$points[, 2],
                        Sample = rownames(nmds_res$points),
@@ -51,11 +57,20 @@ nmds_df <- data.frame(NMDS1 = nmds_res$points[, 1], NMDS2 = nmds_res$points[, 2]
 p <- ggplot(nmds_df, aes(x = NMDS1, y = NMDS2, color = Group)) +
     geom_point(size = 3) +
     stat_ellipse(level = 0.95, linetype = 2) +
-    annotate("text", x = Inf, y = -Inf,
-             label = paste0("Stress = ", round(nmds_res$stress, 4)),
-             hjust = 1.1, vjust = -0.5, size = 4) +
+    annotate("text", x = -Inf, y = -Inf,
+             label = paste0("Stress: ", round(nmds_res$stress, 2)),
+             hjust = -0.1, vjust = -0.5, size = 4) +
     theme_bw() +
-    labs(title = "NMDS (Bray-Curtis)")
+    labs(title = NULL, color = NULL)
+
+if (!is.null(anosim_res)) {
+    r_val <- sprintf("%.3e", anosim_res$statistic)
+    p_val <- sprintf("%.0e", anosim_res$signif)
+    p <- p + annotate("text", x = mean(range(nmds_df$NMDS1)), y = Inf,
+                      label = paste0("P=", p_val), vjust = 1.5, size = 4) +
+             annotate("text", x = mean(range(nmds_df$NMDS1)), y = Inf,
+                      label = paste0("R=", r_val), vjust = 3.5, size = 4)
+}
 
 ggsave(file.path(output_dir, paste0(comp_suffix, ".NMDS.png")), p, width = 8, height = 6)
 ggsave(file.path(output_dir, paste0(comp_suffix, ".NMDS.pdf")), p, width = 8, height = 6)
