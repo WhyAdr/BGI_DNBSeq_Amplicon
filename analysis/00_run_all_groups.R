@@ -40,7 +40,6 @@ analysis_scripts <- c(
     "03_taxa_composition.R",
     "04_differential_analysis.R",
     "05_function_prediction.R",
-    "06_advanced_analysis.R",
     "07_rarefaction_curves.R",
     "08_pca_analysis.R",
     "09_similarity_tests.R",
