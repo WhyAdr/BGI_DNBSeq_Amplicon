@@ -125,8 +125,8 @@ plot_pcoa_unifrac <- function(dist_mat, metric_name, meta, out_dir, pfx) {
     pcoa <- cmdscale(dist_mat, k = n_max_axes, eig = TRUE)
     
     pos_eig <- pcoa$eig[pcoa$eig > 0]
-    n_axes <- length(pos_eig)
-    var_exp <- round(100 * pos_eig / sum(pos_eig), 2)
+    n_axes <- min(length(pos_eig), ncol(pcoa$points))
+    var_exp <- round(100 * pos_eig[1:n_axes] / sum(pos_eig), 2)
 
     # Plot (2D)
     pcoa_df <- data.frame(PCoA1 = pcoa$points[, 1], PCoA2 = pcoa$points[, 2],

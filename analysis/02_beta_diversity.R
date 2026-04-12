@@ -83,8 +83,8 @@ pcoa_data$Sample <- rownames(pcoa_data)
 n_max_axes <- min(nrow(metadata) - 1, nrow(metadata))
 pcoa_full <- cmdscale(dist_bray, k = n_max_axes, eig = TRUE)
 pos_eig <- pcoa_full$eig[pcoa_full$eig > 0]
-n_axes <- length(pos_eig)
-var_exp <- round(100 * pos_eig / sum(pos_eig), 2)
+n_axes <- min(length(pos_eig), ncol(pcoa_full$points))
+var_exp <- round(100 * pos_eig[1:n_axes] / sum(pos_eig), 2)
 
 p_pcoa <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
     geom_point(size = 3) +
@@ -190,8 +190,8 @@ consensus_p <- Reduce("+", aligned_p) / n_iter_p
 
 pcoa_p_full <- cmdscale(dist_pearson, k = n_max_axes, eig = TRUE)
 pos_eig_p <- pcoa_p_full$eig[pcoa_p_full$eig > 0]
-var_exp_p <- round(100 * pos_eig_p / sum(pos_eig_p), 2)
-n_axes_p <- length(pos_eig_p)
+n_axes_p <- min(length(pos_eig_p), ncol(pcoa_p_full$points))
+var_exp_p <- round(100 * pos_eig_p[1:n_axes_p] / sum(pos_eig_p), 2)
 
 pcoa_p_data <- data.frame(PCoA1 = consensus_p[,1], PCoA2 = consensus_p[,2],
                           Group = metadata$Group, Sample = rownames(consensus_p))
