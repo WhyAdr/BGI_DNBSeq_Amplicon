@@ -52,6 +52,20 @@ run_pca_plot <- function(data_mat, samples, meta, title_suffix, out_prefix) {
 
     ggsave(file.path(output_dir, paste0(out_prefix, "_PCA.png")), p, width = 8, height = 6)
     ggsave(file.path(output_dir, paste0(out_prefix, "_PCA.pdf")), p, width = 8, height = 6)
+    
+    # Export group mapping file (BGI format: #Sample_name + group column)
+    group_export <- data.frame(
+        `#Sample_name` = rownames(pca_res$x),
+        Group = meta[rownames(pca_res$x), "Group"],
+        check.names = FALSE
+    )
+    colnames(group_export)[2] <- paste0("OTU.PCA_", out_prefix)
+    write.table(group_export, file.path(output_dir, paste0("OTU.PCA.", out_prefix, ".group.xls")),
+                sep = "\t", row.names = FALSE, quote = FALSE)
+    
+    # Export raw OTU counts (not relative abundance - BGI uses integer counts)
+    write.table(data_mat, file.path(output_dir, paste0("OTU.PCA.", out_prefix, ".otu.xls")),
+                sep = "\t", quote = FALSE)
 }
 
 # --- OTU-level PCA ---

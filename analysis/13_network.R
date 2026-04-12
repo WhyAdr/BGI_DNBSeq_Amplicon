@@ -36,6 +36,25 @@ if (nrow(otu_filt) < 5) {
 
 cat(sprintf("Network analysis using %d OTUs (rel. abund. > 0.5%%).\n", nrow(otu_filt)))
 
+# --- Load Taxonomy for biological labels ---
+tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
+if (file.exists(tax_file)) {
+    tax_data <- read.table(tax_file, header = TRUE, row.names = 1, check.names = FALSE,
+                           sep = "\t", comment.char = "")
+    # Parse deepest non-trivial taxonomic rank for each OTU in otu_filt
+    deepest_tax <- sapply(rownames(otu_filt), function(otu_id) {
+        if (!otu_id %in% rownames(tax_data)) return(otu_id)
+        tx <- as.character(tax_data[otu_id, "Taxonomy"])
+        parts <- trimws(unlist(strsplit(tx, ";")))
+        parts <- parts[parts != "" & parts != "Unclassified" & !grepl("__$", parts)]
+        if (length(parts) > 0) return(sub("^[a-z]__", "", tail(parts, 1)))
+        return(otu_id)
+    })
+    names(deepest_tax) <- rownames(otu_filt)
+} else {
+    deepest_tax <- setNames(rownames(otu_filt), rownames(otu_filt))
+}
+
 # --- Spearman Correlation (vectorized) ---
 if (!requireNamespace("psych", quietly = TRUE)) install.packages("psych")
 library(psych)
@@ -113,10 +132,17 @@ if (vcount(g) > 0) {
     node_means <- rowMeans(otu_rel[V(g)$name, ])
     V(g)$size <- scales::rescale(node_means, to = c(3, 15))
 
+    # Assign taxonomic labels to vertices
+    V(g)$label <- deepest_tax[V(g)$name]
+
+    # Freeze layout PRNG for reproducible geometries across runs
+    set.seed(123)
+    fr_layout <- layout_with_fr(g, weights = abs(E(g)$weight))
+
     png(file.path(output_dir, "CoOccurrence_Network.png"),
         width = 1000, height = 1000, res = 120)
-    plot(g, vertex.label.cex = 0.5, vertex.label.color = "black",
-         layout = layout_with_fr(g, weights = abs(E(g)$weight)),
+    plot(g, vertex.label.cex = 0.7, vertex.label.color = "black",
+         layout = fr_layout,
          main = "Co-occurrence Network (|rho|>0.6, P<0.05)")
     legend("bottomleft", legend = c("Positive", "Negative"),
            col = c("#FF69B4", "#4169E1"), lwd = 2, bty = "n")

@@ -56,9 +56,9 @@ upset_df <- shared_df[, -1, drop = FALSE]  # remove OTU column
 rownames(upset_df) <- shared_df$OTU
 
 png(file.path(flower_dir, "UpSet_SharedOTUs.png"), width = 1400, height = 900, res = 120)
-upset(upset_df, nsets = min(length(groups), 15), order.by = "freq",
+print(upset(upset_df, nsets = min(length(groups), 15), order.by = "freq",
       main.bar.color = "steelblue", sets.bar.color = "darkgreen",
-      text.scale = c(1.5, 1.2, 1.2, 1.0, 1.5, 1.2))
+      text.scale = c(1.5, 1.2, 1.2, 1.0, 1.5, 1.2)))
 dev.off()
 
 # --- Flower/Core-Pan summary ---

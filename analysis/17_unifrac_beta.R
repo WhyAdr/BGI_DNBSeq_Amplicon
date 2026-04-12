@@ -218,8 +218,9 @@ plot_beta_box <- function(dist_mat, metric_name, meta, out_dir) {
 }
 
 # --- Run all metrics ---
-all_comp_dir <- file.path(output_dir, "R_Analysis")
-dir.create(all_comp_dir, showWarnings = FALSE, recursive = TRUE)
+# BGI organizes Beta/ into metric-specific subdirectories
+if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
+library(pheatmap)
 
 metrics <- list(
     "unweighted_unifrac" = dist_uw,
@@ -228,10 +229,27 @@ metrics <- list(
 )
 
 for (metric_name in names(metrics)) {
+    metric_dir <- file.path(output_dir, metric_name)
+    dir.create(metric_dir, showWarnings = FALSE, recursive = TRUE)
+    
     cat(sprintf("\n=== %s ===\n", metric_name))
-    plot_pcoa_unifrac(metrics[[metric_name]], metric_name, metadata, all_comp_dir)
-    plot_upgma(metrics[[metric_name]], metric_name, metadata, all_comp_dir)
-    plot_beta_box(metrics[[metric_name]], metric_name, metadata, all_comp_dir)
+    plot_pcoa_unifrac(metrics[[metric_name]], metric_name, metadata, metric_dir)
+    plot_upgma(metrics[[metric_name]], metric_name, metadata, metric_dir)
+    plot_beta_box(metrics[[metric_name]], metric_name, metadata, metric_dir)
+    
+    # Distance Heatmap with group annotations (per BGI Section 9)
+    target_mat <- as.matrix(metrics[[metric_name]])
+    anno_df <- data.frame(
+        Group = metadata[colnames(target_mat), "Group"],
+        row.names = colnames(target_mat)
+    )
+    pheatmap(target_mat,
+             clustering_method = "average",
+             annotation_col = anno_df,
+             annotation_row = anno_df,
+             fontsize = 8,
+             filename = file.path(metric_dir, paste0(metric_name, "_heatmap.png")),
+             width = 8, height = 7)
 }
 
 print("UniFrac beta diversity analysis (weighted + unweighted + Bray-Curtis) complete.")

@@ -64,18 +64,19 @@ for (i in 1:(n - 1)) {
     }
 }
 
-# --- Optimal K by mean silhouette width ---
-# Test K from 2 to min(10, n-1)
+# --- Optimal K by Calinski-Harabasz Index (per BGI methodology) ---
+# BGI: "optimal cluster number K determined by the Calinski-Harabasz (CH) index"
+if (!requireNamespace("clusterSim", quietly = TRUE)) install.packages("clusterSim")
+
 max_k <- min(10, n - 1)
 ch_scores <- sapply(2:max_k, function(k) {
     pam_res <- pam(as.dist(jsd_mat), k)
-    # Silhouette width (appropriate for distance-based PAM clustering)
-    sil <- silhouette(pam_res)
-    mean(sil[, "sil_width"])
+    clusterSim::index.G1(t(genus_rel), pam_res$clustering,
+                         d = as.dist(jsd_mat), centrotypes = "medoids")
 })
 best_k <- which.max(ch_scores) + 1
 
-cat(sprintf("Optimal K = %d (by silhouette width)\n", best_k))
+cat(sprintf("Optimal K = %d (by Calinski-Harabasz index)\n", best_k))
 
 pam_res <- pam(as.dist(jsd_mat), best_k)
 
@@ -88,21 +89,37 @@ et_assign <- data.frame(
 write.table(et_assign, file.path(output_dir, "Enterotypes.txt"),
             sep = "\t", row.names = FALSE, quote = FALSE)
 
-# --- PCoA visualization (per BGI: BCA for K>=3, PCoA for K>=2) ---
-pcoa <- cmdscale(as.dist(jsd_mat), k = 2, eig = TRUE)
-var_exp <- round(100 * pcoa$eig[1:2] / sum(pcoa$eig[pcoa$eig > 0]), 2)
+# --- Visualization (per BGI: BCA for K>=3, PCoA for K>=2) ---
+if (best_k >= 3) {
+    # Between-Class Analysis via ade4
+    dudi_pco <- dudi.pco(as.dist(jsd_mat), scannf = FALSE, nf = 2)
+    bca_res <- bca(dudi_pco, fac = as.factor(pam_res$clustering), scannf = FALSE, nf = 2)
+    et_df <- data.frame(Comp1 = bca_res$ls[, 1], Comp2 = bca_res$ls[, 2],
+                        Enterotype = as.factor(pam_res$clustering),
+                        Group = metadata[common, "Group"])
+    bca_var <- round(100 * bca_res$eig / sum(bca_res$eig), 2)
+    xlab_str <- paste0("BCA1 (", bca_var[1], "%)")
+    ylab_str <- paste0("BCA2 (", bca_var[2], "%)")
+    ord_eig <- bca_res$eig
+} else {
+    # Standard PCoA for K=2
+    pcoa <- cmdscale(as.dist(jsd_mat), k = 2, eig = TRUE)
+    pos_eig <- pcoa$eig[pcoa$eig > 0]
+    pcoa_var <- round(100 * pcoa$eig[1:2] / sum(pos_eig), 2)
+    et_df <- data.frame(Comp1 = pcoa$points[, 1], Comp2 = pcoa$points[, 2],
+                        Enterotype = as.factor(pam_res$clustering),
+                        Group = metadata[common, "Group"])
+    xlab_str <- paste0("PCoA1 (", pcoa_var[1], "%)")
+    ylab_str <- paste0("PCoA2 (", pcoa_var[2], "%)")
+    ord_eig <- pcoa$eig
+}
 
-et_df <- data.frame(PCoA1 = pcoa$points[, 1], PCoA2 = pcoa$points[, 2],
-                     Enterotype = as.factor(pam_res$clustering),
-                     Group = metadata[common, "Group"])
-
-p <- ggplot(et_df, aes(x = PCoA1, y = PCoA2, color = Enterotype, shape = Group)) +
+p <- ggplot(et_df, aes(x = Comp1, y = Comp2, color = Enterotype, shape = Group)) +
     geom_point(size = 3, alpha = 0.8) +
     stat_ellipse(aes(group = Enterotype), level = 0.95, linetype = 2) +
     theme_bw() +
     labs(title = paste0("Enterotype Classification (K=", best_k, ", JSD + PAM)"),
-         x = paste0("PCoA1 (", var_exp[1], "%)"),
-         y = paste0("PCoA2 (", var_exp[2], "%)"))
+         x = xlab_str, y = ylab_str)
 
 ggsave(file.path(output_dir, "Enterotype_PCoA.png"), p, width = 10, height = 7)
 ggsave(file.path(output_dir, "Enterotype_PCoA.pdf"), p, width = 10, height = 7)
@@ -121,11 +138,12 @@ write.table(data.frame(Taxa = rownames(top30), top30),
 
 # --- Eigenvalue contribution ---
 eig_contrib <- data.frame(
-    PC = paste0("PC", seq_along(pcoa$eig)),
-    Eigenvalue = pcoa$eig,
-    Proportion = round(pcoa$eig / sum(pcoa$eig[pcoa$eig > 0]) * 100, 2)
+    PC = paste0("PC", seq_along(ord_eig)),
+    Eigenvalue = ord_eig,
+    Proportion = round(ord_eig / sum(ord_eig[ord_eig > 0]) * 100, 2)
 )
 write.table(eig_contrib, file.path(output_dir, "eig_contribution.txt"),
             sep = "\t", row.names = FALSE, quote = FALSE)
 
 print("Enterotype analysis complete.")
+

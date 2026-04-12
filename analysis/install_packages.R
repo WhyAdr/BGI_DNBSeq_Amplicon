@@ -11,7 +11,7 @@ cat("==================================================================\n\n")
 cran_pkgs <- c(
     "vegan", "ggplot2", "reshape2", "ggpubr", "pheatmap",
     "randomForest", "caret", "pROC", "ape", "igraph",
-    "cluster", "ade4", "VennDiagram", "UpSetR", "scales",
+    "cluster", "ade4", "clusterSim", "VennDiagram", "UpSetR", "scales",
     "futile.logger", "psych", "MLmetrics"
 )
 

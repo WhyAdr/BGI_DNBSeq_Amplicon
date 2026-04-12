@@ -88,8 +88,8 @@ ggsave(file.path(output_dir, "Phylum_Barplot.pdf"), p, width = 12, height = 7)
 
 # --- Abundance Heatmap (Section 7) ---
 # Hierarchically clustered heatmaps display species relative abundance.
-heatmap_dir <- "../BGI_Result/Heatmap"
-dir.create(heatmap_dir, showWarnings = FALSE)
+if (!exists("heatmap_dir") || is.null(heatmap_dir)) heatmap_dir <- "../BGI_Result/Heatmap"
+dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Add small pseudo-count to avoid log10(0) based on actual data minimum
 # Samples with zero relative abundance are assigned half the minimum per the report.

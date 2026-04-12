@@ -90,24 +90,6 @@ p_pcoa <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
 ggsave(file.path(output_dir, "PCoA_BrayCurtis.png"), p_pcoa, width = 8, height = 6)
 ggsave(file.path(output_dir, "PCoA_BrayCurtis.pdf"), p_pcoa, width = 8, height = 6)
 
-# --- NMDS Analysis (Section 9 Requirement) ---
-# Simplifies high-dimensional data while preserving pairwise rank relationships
-set.seed(42)
-nmds <- metaMDS(dist_bray, k = 2, trymax = 100, trace = FALSE)
-nmds_data <- as.data.frame(nmds$points)
-nmds_data$Group <- metadata$Group
-# Extract stress value (< 0.2 indicates an acceptable representation)
-stress_val <- round(nmds$stress, 3)
-
-p_nmds <- ggplot(nmds_data, aes(x = MDS1, y = MDS2, color = Group)) +
-    geom_point(size = 3) +
-    stat_ellipse(level = 0.95, linetype = 2) +
-    theme_bw() +
-    labs(title = paste0("NMDS Plot (Bray-Curtis)\nStress: ", stress_val))
-
-ggsave(file.path(output_dir, "NMDS_BrayCurtis.png"), p_nmds, width = 8, height = 6)
-ggsave(file.path(output_dir, "NMDS_BrayCurtis.pdf"), p_nmds, width = 8, height = 6)
-
 # --- PERMANOVA (ADONIS) Analysis ---
 # Evaluates whether group identity significantly explains total beta diversity variance
 if ("Group" %in% colnames(metadata) && length(unique(metadata$Group)) > 1) {

@@ -83,7 +83,13 @@ if (num_groups < 2) {
     test_method <- "kruskal.test"
 }
 
-metrics_to_plot <- c("Sobs", "Chao1", "ACE", "Shannon", "Simpson")
+# BGI exports 6 metrics with lowercase names: sobs, chao, ace, shannon, simpson, coverage
+metrics_to_plot <- c("Sobs", "Chao1", "ACE", "Shannon", "Simpson", "Coverage")
+# Map our column names to BGI's lowercase export names
+bgi_metric_names <- c(Sobs = "sobs", Chao1 = "chao", ACE = "ace",
+                      Shannon = "shannon", Simpson = "simpson", Coverage = "coverage")
+
+alpha_test_rows <- list()
 
 for (metric in metrics_to_plot) {
     p <- ggplot(alpha_data, aes(x = .data[[group_col]], y = .data[[metric]], fill = .data[[group_col]])) +
@@ -95,10 +101,39 @@ for (metric in metrics_to_plot) {
     # Overlay statistical significance if groups are valid
     if (!is.null(test_method)) {
         p <- p + stat_compare_means(method = test_method)
+        
+        # Run explicit statistical tests and accumulate results
+        formula <- as.formula(paste(metric, "~", group_col))
+        if (test_method == "wilcox.test") {
+            test_res <- wilcox.test(formula, data = alpha_data)
+        } else {
+            test_res <- kruskal.test(formula, data = alpha_data)
+        }
+        
+        # Build mean/SD columns for each group (BGI schema)
+        group_stats <- do.call(cbind, lapply(unique(alpha_data[[group_col]]), function(g) {
+            vals <- alpha_data[[metric]][alpha_data[[group_col]] == g]
+            setNames(data.frame(round(mean(vals), 5), round(sd(vals), 5)),
+                     c(paste0("mean(", g, ")"), paste0("SD(", g, ")")))
+        }))
+        
+        alpha_test_rows[[metric]] <- cbind(
+            data.frame(`#Alpha` = bgi_metric_names[metric], check.names = FALSE),
+            group_stats,
+            data.frame(`p-vaule` = round(test_res$p.value, 5), check.names = FALSE)
+        )
     }
     
     ggsave(file.path(output_dir, paste0(metric, "_boxplot.png")), p, width = 8, height = 6)
     ggsave(file.path(output_dir, paste0(metric, "_boxplot.pdf")), p, width = 8, height = 6)
 }
 
+# Write unified Alpha test result file (all metrics in one table)
+if (length(alpha_test_rows) > 0) {
+    result_df <- do.call(rbind, alpha_test_rows)
+    write.table(result_df, file.path(output_dir, "Alpha_test_result.xls"),
+                sep = "\t", row.names = FALSE, quote = FALSE)
+}
+
 print("Optimized Alpha diversity analysis complete.")
+
