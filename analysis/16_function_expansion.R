@@ -14,8 +14,8 @@ library(pheatmap)
 # --- Configuration ---
 if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
 if (!exists("base_dir") || is.null(base_dir)) base_dir <- "../BGI_Result/Picrust/Function_Prdeict"
-if (!exists("diff_dir") || is.null(diff_dir)) diff_dir <- "../BGI_Result/Picrust/Function_Diff"
 if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Picrust"
+if (!exists("diff_dir") || is.null(diff_dir)) diff_dir <- file.path(output_dir, "Function_Diff")
 dir.create(diff_dir, showWarnings = FALSE, recursive = TRUE)
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
