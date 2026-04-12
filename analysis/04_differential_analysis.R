@@ -1,9 +1,16 @@
 # ==============================================================================
 # 04_differential_analysis.R
-# BGI Amplicon Workflow - Differential Species Analysis (Optimized)
+# BGI Amplicon Workflow - Differential Species Analysis
 # ==============================================================================
-# Identifies biomarkers and significant features (Sections 10 and M9)
-# Performs Wilcoxon or Kruskal-Wallis non-parametric tests on relative abundances.
+# Performs non-parametric differential testing at Phylum and Family levels.
+# Uses Wilcoxon rank-sum (2 groups) or Kruskal-Wallis (3+ groups).
+# Outputs BGI-format Median/IQR tables and abundance matrices.
+#
+# Statistical rationale: "Test the forest before the trees."
+# Testing at coarse taxonomic levels (Phylum, Family) with aggressive FDR
+# correction avoids the massive multiple testing burden of exhaustive
+# per-level testing. Fine-grained biomarker discovery is delegated to LEfSe,
+# which has built-in KW → pairwise Wilcoxon → LDA gating.
 # ==============================================================================
 
 library(ggplot2)
@@ -12,7 +19,8 @@ library(ggplot2)
 if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
 if (!exists("tax_file") || is.null(tax_file)) tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
 if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Diff"
+if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Reproduced/Diff"
+if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
@@ -33,84 +41,202 @@ if (length(groups) < 2) {
     stop("Error: Differential analysis requires at least 2 distinct groups in metadata.")
 }
 
-# --- Pre-filtering for Statistical Power (Optimization) ---
-# Removing extremely rare OTUs drastically reduces the multiple testing penalty 
-# (FDR correction via Benjamini-Hochberg).
-# Keep OTUs present in at least 10% of samples or with mean relative abundance > 0.01%
+# OTU-level relative abundance (proportions 0-1) retained for LEfSe preparation
 rel_abund <- sweep(otu, 2, colSums(otu), "/")
-prevalence <- rowSums(otu > 0) / ncol(otu)
-keep_otus <- rownames(otu)[rowMeans(rel_abund) > 0.0001 | prevalence >= 0.1]
 
-cat(sprintf("Filtering: Retaining %d out of %d OTUs for testing.\n", length(keep_otus), nrow(otu)))
-otu_filtered <- otu[keep_otus, , drop = FALSE]
-
-# --- Statistical Testing (Section 10) ---
-# The Wilcoxon Rank-Sum test (Mann-Whitney U) is used to identify significantly 
-# different species between two independent groups.
-# The Kruskal-Wallis test is used across three or more groups.
-results <- data.frame(OTU = keep_otus)
-
-if (length(groups) == 2) {
-    # Wilcoxon test (2 groups)
-    p_values <- apply(otu_filtered, 1, function(x) wilcox.test(x ~ metadata$Group)$p.value)
-} else {
-    # Kruskal-Wallis test (3+ groups)
-    p_values <- apply(otu_filtered, 1, function(x) kruskal.test(x ~ metadata$Group)$p.value)
-}
-
-results$p_value <- p_values
-# FDR Correction only on the filtered high-quality OTUs to preserve actual biomarkers
-results$FDR <- p.adjust(p_values, method = "BH")
-results$Taxonomy <- tax[keep_otus, "Taxonomy"]
-
-# --- Log₂ Fold-Change (BGI Section 10 requirement) ---
+# --- Core Variables ---
 group_lvls <- sort(unique(metadata$Group))
-group_means <- sapply(group_lvls, function(g)
-    rowMeans(rel_abund[keep_otus, metadata$Group == g, drop = FALSE]))
-pseudo <- 1e-9  # Pseudocount to avoid log(0)
+comp_suffix <- paste(group_lvls, collapse = "-")
+test_name <- if (length(group_lvls) == 2) "wilcox.test" else "kruskal.test"
 
-if (length(group_lvls) == 2) {
-    # Two-group: log2(Group2 / Group1)
-    results$log2FC <- log2((group_means[, 2] + pseudo) / (group_means[, 1] + pseudo))
-    results$Comparison <- paste0(group_lvls[2], "_vs_", group_lvls[1])
-} else {
-    # Multi-group: report max |log2FC| across all pairwise comparisons
-    n_grp <- length(group_lvls)
-    max_lfc <- rep(0, length(keep_otus))
-    max_pair <- rep("", length(keep_otus))
-    for (a in 1:(n_grp - 1)) {
-        for (b in (a + 1):n_grp) {
-            lfc <- log2((group_means[, b] + pseudo) / (group_means[, a] + pseudo))
-            update <- abs(lfc) > abs(max_lfc)
-            max_lfc[update] <- lfc[update]
-            max_pair[update] <- paste0(group_lvls[b], "_vs_", group_lvls[a])
-        }
-    }
-    results$log2FC <- max_lfc
-    results$MaxPair <- max_pair
-}
+# Create flat test-level output directory (matching BGI structure)
+test_dir <- file.path(output_dir, test_name)
+dir.create(test_dir, showWarnings = FALSE, recursive = TRUE)
 
-results <- results[order(results$p_value), ]
-write.table(results, file = file.path(output_dir, "differential_species_stats.xls"), 
+# Write group info file (BGI format: header + sampleID\tgroupname)
+group_info <- data.frame(sampleID = rownames(metadata), groupname = metadata$Group)
+write.table(group_info, file.path(test_dir, paste0(comp_suffix, ".group.info")),
             sep = "\t", row.names = FALSE, quote = FALSE)
 
-# --- Histogram of Key Species Difference Comparison (Section 10) ---
-# Top significant abundance comparisons are boxed/bar graphed contextually.
-sig_results <- results[!is.na(results$FDR) & results$FDR < 0.05, ]
-if (nrow(sig_results) > 0) {
-    # Extract top 10 for visualization
-    top_diff <- head(sig_results$OTU, 10)
-    
-    for (td_otu in top_diff) {
-        dt <- data.frame(Abundance = rel_abund[td_otu, ], Group = metadata$Group)
-        p_diff <- ggplot(dt, aes(x = Group, y = Abundance, fill = Group)) +
-            geom_boxplot() + theme_bw() +
-            labs(title = paste("Differential Abundance:", td_otu), y = "Relative Abundance")
-        ggsave(file.path(output_dir, paste0(td_otu, "_diff_boxplot.png")), p_diff, width = 6, height = 5)
+# ==============================================================================
+# --- Differential Testing at Phylum + Family ---
+# ==============================================================================
+# Restricted to two levels per statistical best practice. No pre-filtering
+# is applied at these coarse ranks (typically <40 Phyla, <200 Families)
+# since BH-FDR correction handles the modest testing burden cleanly.
+# ==============================================================================
+
+level_map <- c("L2" = "Phylum", "L5" = "Family")
+
+for (lvl in names(level_map)) {
+    lvl_name <- level_map[lvl]
+    lvl_file <- file.path(otu_dir, paste0("OTU_table_", lvl, ".txt"))
+
+    if (!file.exists(lvl_file)) {
+        cat(sprintf("  Skipping differential at %s: file not found.\n", lvl_name))
+        next
     }
+
+    # --- Load level-specific abundance table (raw counts) ---
+    lvl_otu <- read.table(lvl_file, header = TRUE, row.names = 1,
+                          check.names = FALSE, sep = "\t", comment.char = "")
+    if ("taxonomy" %in% colnames(lvl_otu)) lvl_otu$taxonomy <- NULL
+
+    lvl_common <- intersect(colnames(lvl_otu), common_samples)
+    if (length(lvl_common) < 3) next
+    lvl_otu <- lvl_otu[, lvl_common, drop = FALSE]
+    lvl_meta <- metadata[lvl_common, , drop = FALSE]
+
+    # --- Compute relative abundance as percentages (0-100 scale) ---
+    lvl_rel_pct <- sweep(lvl_otu, 2, colSums(lvl_otu), "/") * 100
+
+    # --- Strip taxonomy to bare taxon name ---
+    # e.g. "Bacteria;Bacillota;Bacilli;Caryophanales;Caryophanaceae" → "Caryophanaceae"
+    bare_names <- sapply(strsplit(rownames(lvl_otu), ";"), tail, 1)
+    bare_names <- trimws(bare_names)
+
+    # Handle duplicate names after stripping by appending a suffix
+    if (any(duplicated(bare_names))) {
+        dups <- bare_names[duplicated(bare_names)]
+        for (d in unique(dups)) {
+            idx <- which(bare_names == d)
+            bare_names[idx] <- paste0(bare_names[idx], "_", seq_along(idx))
+        }
+    }
+
+    rownames(lvl_rel_pct) <- bare_names
+    rownames(lvl_otu) <- bare_names
+    taxa <- bare_names
+
+    # --- Statistical Testing ---
+    # Tests run on raw counts (rank-based tests are scale-invariant)
+    if (length(group_lvls) == 2) {
+        pvals <- apply(lvl_otu, 1, function(x)
+            tryCatch(wilcox.test(x ~ lvl_meta$Group)$p.value,
+                     error = function(e) NA))
+    } else {
+        pvals <- apply(lvl_otu, 1, function(x)
+            tryCatch(kruskal.test(x ~ lvl_meta$Group)$p.value,
+                     error = function(e) NA))
+    }
+
+    fdr <- p.adjust(pvals, method = "BH")
+
+    # --- Build BGI-format results table ---
+    # Schema: Level | median(G1) | IQR(G1) | ... | p.value | FDR
+    # Medians and IQRs computed on percentage-scale relative abundances
+    lvl_results <- data.frame(row.names = taxa)
+    lvl_results[[lvl_name]] <- taxa
+
+    for (g in group_lvls) {
+        g_samples <- rownames(lvl_meta)[lvl_meta$Group == g]
+        g_data <- lvl_rel_pct[taxa, g_samples, drop = FALSE]
+        lvl_results[[paste0("median(", g, ")")]] <- round(apply(g_data, 1, median), 6)
+        lvl_results[[paste0("IQR(", g, ")")]] <- round(apply(g_data, 1, IQR), 6)
+    }
+
+    lvl_results[["p.value"]] <- round(pvals, 6)
+    lvl_results[["FDR"]] <- round(fdr, 6)
+
+    # Sort alphabetically by taxon name (BGI convention)
+    lvl_results <- lvl_results[order(lvl_results[[lvl_name]]), ]
+
+    # Write test results (.test.xls)
+    write.table(lvl_results,
+                file.path(test_dir, paste0(lvl_name, ".", comp_suffix, ".", test_name, ".xls")),
+                sep = "\t", row.names = FALSE, quote = FALSE)
+
+    # --- Abundance table (transposed: samples × taxa + groupname) ---
+    # BGI format: tab-prefixed header, sample rows, groupname last column
+    abund_mat <- t(lvl_rel_pct[taxa, lvl_common, drop = FALSE])
+    abund_df <- as.data.frame(abund_mat)
+    abund_df$groupname <- lvl_meta[rownames(abund_df), "Group"]
+    write.table(abund_df,
+                file.path(test_dir, paste0(lvl_name, ".", comp_suffix, ".abundance.xls")),
+                sep = "\t", col.names = NA, row.names = TRUE, quote = FALSE)
+
+    # --- Visualization ---
+    img_dir <- file.path(test_dir, lvl_name)
+    dir.create(img_dir, showWarnings = FALSE, recursive = TRUE)
+
+    # Top 10 by highest mean abundance among significant taxa (FDR < 0.05)
+    mean_abund <- rowMeans(lvl_rel_pct[taxa, lvl_common, drop = FALSE])
+    sig_idx <- which(!is.na(fdr) & fdr < 0.05)
+    if (length(sig_idx) > 0) {
+        sig_names <- taxa[sig_idx]
+        sig_names <- sig_names[order(-mean_abund[sig_names])]
+        top10_names <- head(sig_names, 10)
+
+        # Build grouped bar data from median columns
+        plot_data <- do.call(rbind, lapply(top10_names, function(taxon) {
+            do.call(rbind, lapply(group_lvls, function(g) {
+                med_val <- lvl_results[lvl_results[[lvl_name]] == taxon, paste0("median(", g, ")")]
+                data.frame(Taxon = taxon, Group = g, Median = med_val, stringsAsFactors = FALSE)
+            }))
+        }))
+        plot_data$Taxon <- factor(plot_data$Taxon, levels = rev(top10_names))
+
+        p_top <- ggplot(plot_data, aes(x = Taxon, y = Median, fill = Group)) +
+            geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+            coord_flip() +
+            theme_bw() +
+            labs(title = paste0("Top 10 Significant ", lvl_name, " (", comp_suffix, ")"),
+                 x = "", y = "Median Relative Abundance (%)")
+
+        for (fmt in c("png", "pdf")) {
+            ggsave(file.path(img_dir,
+                             paste0("Top10.", lvl_name, ".", comp_suffix, ".High-Relative.", fmt)),
+                   p_top, width = 8, height = 5)
+        }
+    }
+
+    # Full comparison boxplot (top 30 by p-value for readability)
+    show_order <- taxa[order(pvals[taxa])]
+    show_taxa <- head(show_order, 30)
+    if (length(show_taxa) > 0) {
+        full_data <- do.call(rbind, lapply(show_taxa, function(taxon) {
+            data.frame(
+                Taxon = taxon,
+                Group = lvl_meta$Group,
+                Abundance = as.numeric(lvl_rel_pct[taxon, lvl_common]),
+                stringsAsFactors = FALSE
+            )
+        }))
+        full_data$Taxon <- factor(full_data$Taxon, levels = rev(show_taxa))
+
+        # Abbreviate test name for file: wilcox.test → wilcox, kruskal.test → kruskal
+        test_short <- sub("\\.test$", "", test_name)
+        p_full <- ggplot(full_data, aes(x = Taxon, y = Abundance, fill = Group)) +
+            geom_boxplot(outlier.size = 0.5) +
+            coord_flip() +
+            theme_bw() +
+            theme(axis.text.y = element_text(size = 6)) +
+            labs(title = paste0(test_short, " - ", lvl_name, " (", comp_suffix, ")"),
+                 x = "", y = "Relative Abundance (%)")
+
+        for (fmt in c("png", "pdf")) {
+            ggsave(file.path(img_dir,
+                             paste0(test_short, ".", lvl_name, ".", comp_suffix, ".", fmt)),
+                   p_full, width = 10, height = max(6, length(show_taxa) * 0.3))
+        }
+    }
+
+    n_sig <- sum(fdr < 0.05, na.rm = TRUE)
+    cat(sprintf("  %s: %d taxa tested, %d significant (FDR<0.05).\n",
+                lvl_name, length(taxa), n_sig))
 }
 
-# --- Structural preparation for LEfSe Analysis (Strict TXT generation) ---
+# ==============================================================================
+# --- LEfSe Input Preparation ---
+# ==============================================================================
+# LEfSe performs its own hierarchical gating:
+#   1. Kruskal-Wallis across all groups (omnibus gate)
+#   2. Pairwise Wilcoxon for features passing step 1
+#   3. LDA effect size threshold (|LDA| > 2.0)
+# This replaces the need for exhaustive per-level differential testing.
+# Output: ../BGI_Result/Lefse/{comp_suffix}.OTU_tax_assignments.txt
+# ==============================================================================
+
 lefse_dir <- "../BGI_Result/Lefse"
 dir.create(lefse_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -125,7 +251,7 @@ agg_abund_list <- list()
 for (i in seq_along(tax_strings)) {
     full_tax <- tax_strings[i]
     if (is.na(full_tax) || full_tax == "") next
-    
+
     parts <- unlist(strsplit(full_tax, "\\|"))
     for (j in seq_along(parts)) {
         sub_tax <- paste(parts[1:j], collapse = "|")
@@ -146,97 +272,7 @@ out_lefse <- rbind(
     c("Sample", rownames(metadata)),
     cbind(rownames(agg_abund), format(agg_abund, scientific=FALSE))
 )
-comp_suffix <- paste(sort(unique(metadata$Group)), collapse = "-")
-write.table(out_lefse, file.path(lefse_dir, paste0(comp_suffix, ".OTU_tax_assignments.txt")), 
+write.table(out_lefse, file.path(lefse_dir, paste0(comp_suffix, ".OTU_tax_assignments.txt")),
             sep = "\t", col.names = FALSE, row.names = FALSE, quote = FALSE)
 
-# ==============================================================================
-# --- Multi-level Differential Analysis (BGI Section 10) ---
-# ==============================================================================
-# BGI output path: Diff/wilcoxon.test/each_level/{Phylum,Class,...,Species}/
-# Tests are run on taxonomically aggregated abundance tables at each level.
-if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
-level_map <- c("L2" = "Phylum", "L3" = "Class", "L4" = "Order",
-               "L5" = "Family", "L6" = "Genus", "L7" = "Species")
-
-for (lvl in names(level_map)) {
-    lvl_name <- level_map[lvl]
-    lvl_file <- file.path(otu_dir, paste0("OTU_table_", lvl, ".txt"))
-
-    if (!file.exists(lvl_file)) {
-        cat(sprintf("  Skipping differential at %s: file not found.\n", lvl_name))
-        next
-    }
-
-    lvl_otu <- read.table(lvl_file, header = TRUE, row.names = 1,
-                          check.names = FALSE, sep = "\t", comment.char = "")
-    if ("taxonomy" %in% colnames(lvl_otu)) lvl_otu$taxonomy <- NULL
-
-    lvl_common <- intersect(colnames(lvl_otu), common_samples)
-    if (length(lvl_common) < 3) next
-    lvl_otu <- lvl_otu[, lvl_common, drop = FALSE]
-    lvl_rel <- sweep(lvl_otu, 2, colSums(lvl_otu), "/")
-
-    # Filter: mean relative abundance > 0.01% or prevalence >= 10%
-    prev <- rowSums(lvl_otu > 0) / ncol(lvl_otu)
-    keep <- rownames(lvl_otu)[rowMeans(lvl_rel) > 0.0001 | prev >= 0.1]
-    if (length(keep) < 2) next
-
-    lvl_filtered <- lvl_otu[keep, , drop = FALSE]
-
-    lvl_meta <- metadata[lvl_common, , drop = FALSE]
-    lvl_groups <- unique(lvl_meta$Group)
-
-    if (length(lvl_groups) == 2) {
-        pvals <- apply(lvl_filtered, 1, function(x)
-            tryCatch(wilcox.test(x ~ lvl_meta$Group)$p.value,
-                     error = function(e) NA))
-        test_label <- "wilcoxon"
-    } else {
-        pvals <- apply(lvl_filtered, 1, function(x)
-            tryCatch(kruskal.test(x ~ lvl_meta$Group)$p.value,
-                     error = function(e) NA))
-        test_label <- "kruskal"
-    }
-
-    lvl_results <- data.frame(
-        Feature = keep,
-        p_value = pvals,
-        FDR = p.adjust(pvals, method = "BH")
-    )
-
-    # Log2FC for this level
-    lvl_grp_means <- sapply(lvl_groups, function(g)
-        rowMeans(lvl_rel[keep, lvl_meta$Group == g, drop = FALSE]))
-    if (length(lvl_groups) == 2) {
-        lvl_results$log2FC <- log2((lvl_grp_means[, 2] + 1e-9) /
-                                    (lvl_grp_means[, 1] + 1e-9))
-    } else {
-        # Multi-group: max |LFC| pairwise
-        n_g <- length(lvl_groups)
-        mlfc <- rep(0, length(keep))
-        mpair <- rep("", length(keep))
-        for (a in 1:(n_g - 1)) {
-            for (b in (a + 1):n_g) {
-                lfc_lvl <- log2((lvl_grp_means[, b] + 1e-9) / (lvl_grp_means[, a] + 1e-9))
-                upd <- abs(lfc_lvl) > abs(mlfc)
-                mlfc[upd] <- lfc_lvl[upd]
-                mpair[upd] <- paste0(lvl_groups[b], "_vs_", lvl_groups[a])
-            }
-        }
-        lvl_results$log2FC <- mlfc
-        lvl_results$MaxPair <- mpair
-    }
-
-    lvl_results <- lvl_results[order(lvl_results$p_value), ]
-
-    lvl_out <- file.path(output_dir, paste0(test_label, ".test"), "each_level", lvl_name)
-    dir.create(lvl_out, showWarnings = FALSE, recursive = TRUE)
-    write.table(lvl_results, file.path(lvl_out, paste0(lvl_name, "_diff.xls")),
-                sep = "\t", row.names = FALSE, quote = FALSE)
-
-    cat(sprintf("  Differential at %s: %d features tested, %d significant (FDR<0.05).\n",
-                lvl_name, nrow(lvl_results), sum(lvl_results$FDR < 0.05, na.rm = TRUE)))
-}
-
-print("Differential analysis (OTU-level + multi-taxonomy) complete.")
+print("Differential analysis (Phylum + Family + LEfSe preparation) complete.")
