@@ -19,16 +19,19 @@ library(phyloseq)
 library(ape)
 library(vegan)
 library(ggplot2)
+if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
+library(pheatmap)
 
 # --- Configuration ---
 if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
 if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-# BGI provides FastTree-generated phylogenetic trees in two locations:
-#   Beta/<comparison>/ — OTU-level trees
-#   Genus_Tree/        — genus-level trees (per comparison)
 if (!exists("tree_dir_beta") || is.null(tree_dir_beta)) tree_dir_beta <- "../BGI_Result/Beta"
 if (!exists("tree_dir_genus") || is.null(tree_dir_genus)) tree_dir_genus <- "../BGI_Result/Genus_Tree"
 if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Beta"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+comp_suffix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "") comp_suffix else "ALL"
+prefix <- comp_suffix
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
@@ -42,18 +45,14 @@ otu <- otu[, common_samples, drop = FALSE]
 metadata <- metadata[common_samples, , drop = FALSE]
 
 # --- Find the phylogenetic tree ---
-# Auto-select comparison-specific tree when run via 00_run_all_groups.R
-# (which injects 'comp_suffix' into the environment)
 find_tree <- function(comp_name = NULL) {
-    # 1) Try comparison-specific OTU tree in Beta/
-    if (!is.null(comp_name) && comp_name != "") {
+    if (!is.null(comp_name) && comp_name != "ALL") {
         specific_beta <- file.path(tree_dir_beta, comp_name,
                                    paste0(comp_name, ".OTU_final_phylogeny_tree.txt"))
         if (file.exists(specific_beta)) {
             cat(sprintf("Using comparison-specific OTU tree: %s\n", specific_beta))
             return(specific_beta)
         }
-        # 2) Try comparison-specific genus tree in Genus_Tree/
         specific_genus <- file.path(tree_dir_genus,
                                     paste0(comp_name, ".genus.phylogeny.tree"))
         if (file.exists(specific_genus)) {
@@ -62,18 +61,15 @@ find_tree <- function(comp_name = NULL) {
         }
     }
 
-    # 3) Fall back to all-sample OTU tree
     all_beta <- file.path(tree_dir_beta,
                           "A-B-C-D-E-F-G-H-I-J-K-L-M-N-O-P-Q",
                           "A-B-C-D-E-F-G-H-I-J-K-L-M-N-O-P-Q.OTU_final_phylogeny_tree.txt")
     if (file.exists(all_beta)) return(all_beta)
 
-    # 4) Fall back to all-sample genus tree
     all_genus <- file.path(tree_dir_genus,
                            "A-B-C-D-E-F-G-H-I-J-K-L-M-N-O-P-Q.genus.phylogeny.tree")
     if (file.exists(all_genus)) return(all_genus)
 
-    # 5) Search both directories for any available tree
     candidates <- c(
         list.files(tree_dir_beta, pattern = "phylogeny_tree\\.txt$",
                    recursive = TRUE, full.names = TRUE),
@@ -88,9 +84,7 @@ find_tree <- function(comp_name = NULL) {
     stop("No phylogenetic tree file found in Beta/ or Genus_Tree/. Cannot compute UniFrac.")
 }
 
-# comp_suffix is injected by 00_run_all_groups.R; defaults to NULL for standalone runs
-comp_name_env <- if (exists("comp_suffix")) comp_suffix else NULL
-tree_file <- find_tree(comp_name_env)
+tree_file <- find_tree(prefix)
 cat(sprintf("Final tree selection: %s\n", tree_file))
 
 # --- Read tree ---
@@ -125,14 +119,16 @@ dist_uw <- UniFrac(ps, weighted = FALSE)
 cat("Computing Weighted UniFrac...\n")
 dist_w <- UniFrac(ps, weighted = TRUE)
 
-# --- Also compute Bray-Curtis for comparison ---
-dist_bc <- vegdist(t(otu_rare), method = "bray")
+# --- BGI Helper: PCoA + PERMANOVA + egi + .coordinate.xls per metric ---
+plot_pcoa_unifrac <- function(dist_mat, metric_name, meta, out_dir, pfx) {
+    n_max_axes <- min(nrow(meta) - 1, nrow(meta))
+    pcoa <- cmdscale(dist_mat, k = n_max_axes, eig = TRUE)
+    
+    pos_eig <- pcoa$eig[pcoa$eig > 0]
+    n_axes <- length(pos_eig)
+    var_exp <- round(100 * pos_eig / sum(pos_eig), 2)
 
-# --- Helper: PCoA + PERMANOVA per metric ---
-plot_pcoa_unifrac <- function(dist_mat, metric_name, meta, out_dir) {
-    pcoa <- cmdscale(dist_mat, k = min(3, nrow(as.matrix(dist_mat)) - 1), eig = TRUE)
-    var_exp <- round(100 * pcoa$eig[1:2] / sum(pcoa$eig[pcoa$eig > 0]), 2)
-
+    # Plot (2D)
     pcoa_df <- data.frame(PCoA1 = pcoa$points[, 1], PCoA2 = pcoa$points[, 2],
                            Sample = rownames(pcoa$points),
                            Group = meta[rownames(pcoa$points), "Group"])
@@ -142,100 +138,112 @@ plot_pcoa_unifrac <- function(dist_mat, metric_name, meta, out_dir) {
         stat_ellipse(level = 0.95, linetype = 2) +
         theme_bw() +
         labs(title = paste0("PCoA (", metric_name, ")"),
-             x = paste0("PCoA1 (", var_exp[1], "%)"),
-             y = paste0("PCoA2 (", var_exp[2], "%)"))
+             x = paste0("PCoA 1 (", var_exp[1], "%)"),
+             y = paste0("PCoA 2 (", var_exp[2], "%)"))
 
-    ggsave(file.path(out_dir, paste0(metric_name, ".PCoA.png")), p, width = 8, height = 6)
-    ggsave(file.path(out_dir, paste0(metric_name, ".PCoA.pdf")), p, width = 8, height = 6)
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".PCoA.png")), p, width = 8, height = 6)
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".PCoA.pdf")), p, width = 8, height = 6)
+
+    # Export distance matrix
+    write.table(as.matrix(dist_mat),
+                file.path(out_dir, paste0(metric_name, "_", pfx, ".Beta_diversity.txt")),
+                sep = "\t", quote = FALSE)
+
+    # Export Coordinate Excel (All positive axes)
+    coord_df <- as.data.frame(pcoa$points[, 1:n_axes, drop=FALSE])
+    colnames(coord_df) <- paste0("PCoA", 1:n_axes)
+    coord_df$Group <- meta[rownames(coord_df), "Group"]
+    write.table(coord_df, file.path(out_dir, paste0(pfx, ".", metric_name, ".coordinate.xls")),
+                sep = "\t", row.names = TRUE, col.names = NA, quote = FALSE)
+                
+    # Export Egi
+    egi_df <- data.frame(t(var_exp))
+    colnames(egi_df) <- paste0("PCoA", 1:n_axes)
+    write.table(egi_df, file.path(out_dir, paste0(pfx, ".", metric_name, ".egi.txt")), 
+                sep="\t", row.names=FALSE, quote=FALSE)
 
     # PERMANOVA
     if (length(unique(meta$Group)) >= 2) {
         adonis_res <- adonis2(dist_mat ~ Group, data = meta, permutations = 999)
-        write.table(as.data.frame(adonis_res),
-                    file.path(out_dir, paste0(metric_name, ".permanova.test.xls")),
-                    sep = "\t", quote = FALSE)
+        adonis_format <- data.frame(Df = adonis_res$Df, SumsOfSqs = adonis_res$SumOfSqs, 
+                                    MeanSqs = adonis_res$SumOfSqs / adonis_res$Df,
+                                    F.Model = adonis_res$F, R2 = adonis_res$R2, `Pr(>F)` = adonis_res$`Pr(>F)`, 
+                                    check.names=FALSE)
+        rownames(adonis_format) <- c("Description", "Residuals", "Total")
+        write.table(adonis_format, file.path(out_dir, paste0(pfx, ".", metric_name, ".permanova.test.xls")),
+                    sep = "\t", quote = FALSE, col.names=NA)
     }
-
-    # Export distance matrix
-    write.table(as.matrix(dist_mat),
-                file.path(out_dir, paste0(metric_name, ".Beta_diversity.txt")),
-                sep = "\t", quote = FALSE)
-
-    # Export coordinates
-    write.table(pcoa_df, file.path(out_dir, paste0(metric_name, ".coordinate.xls")),
-                sep = "\t", row.names = FALSE, quote = FALSE)
 }
 
 # --- UPGMA Tree ---
-plot_upgma <- function(dist_mat, metric_name, meta, out_dir) {
-    hc <- hclust(dist_mat, method = "average")  # UPGMA = average linkage
-    dend <- as.dendrogram(hc)
-
-    # Color by group
-    sample_groups <- meta[hc$labels[hc$order], "Group"]
-    n_groups <- length(unique(meta$Group))
-    group_cols <- rainbow(n_groups)
-    names(group_cols) <- sort(unique(meta$Group))
-
-    png(file.path(out_dir, paste0(metric_name, ".UPGMA_tree.png")),
+plot_upgma <- function(dist_mat, metric_name, meta, out_dir, pfx) {
+    hc <- hclust(dist_mat, method = "average")
+    
+    png(file.path(out_dir, paste0(pfx, "_", metric_name, ".tree.png")),
         width = 1200, height = 800, res = 120)
     plot(hc, main = paste0("UPGMA Clustering Tree (", metric_name, ")"),
          xlab = "", sub = "", cex = 0.7)
     dev.off()
 
-    pdf(file.path(out_dir, paste0(metric_name, ".UPGMA_tree.pdf")),
+    pdf(file.path(out_dir, paste0(pfx, "_", metric_name, ".tree.pdf")),
         width = 12, height = 8)
     plot(hc, main = paste0("UPGMA Clustering Tree (", metric_name, ")"),
          xlab = "", sub = "", cex = 0.7)
     dev.off()
 }
 
-# --- Beta Boxplot ---
-plot_beta_box <- function(dist_mat, metric_name, meta, out_dir) {
+# --- Beta Boxplot Logic ---
+export_beta_box <- function(dist_mat, metric_name, meta, out_dir, pfx) {
     dist_m <- as.matrix(dist_mat)
     groups <- sort(unique(meta$Group))
-
+    
     box_data <- do.call(rbind, lapply(groups, function(g) {
         samps <- rownames(meta)[meta$Group == g]
         if (length(samps) < 2) return(NULL)
         pairs <- combn(samps, 2)
         dists <- apply(pairs, 2, function(x) dist_m[x[1], x[2]])
-        data.frame(Group = g, Distance = dists, stringsAsFactors = FALSE)
+        data.frame(value = dists, Group = g, stringsAsFactors = FALSE)
     }))
-
+    
     if (is.null(box_data) || nrow(box_data) == 0) return()
-
-    p <- ggplot(box_data, aes(x = Group, y = Distance, fill = Group)) +
+    
+    p_box <- ggplot(box_data, aes(x = Group, y = value, fill = Group)) +
         geom_boxplot(alpha = 0.8) +
         theme_bw() +
         labs(title = paste0("Intra-group Beta Diversity (", metric_name, ")"),
              y = paste0(metric_name, " Distance"))
-
-    ggsave(file.path(out_dir, paste0(metric_name, ".Beta.Box.png")), p, width = 10, height = 6)
-
-    write.table(box_data, file.path(out_dir, paste0(metric_name, ".Beta_Box.xls")),
-                sep = "\t", row.names = FALSE, quote = FALSE)
+             
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta.Box.png")), p_box, width = 10, height = 6)
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta.Box.pdf")), p_box, width = 10, height = 6)
+    
+    write.table(box_data, file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta_Box.xls")), sep="\t", row.names=FALSE, quote=FALSE)
+    
+    test_df <- data.frame(Group = character(), median = numeric(), quantile = numeric(), Statistic = character(), P.value = character())
+    for (i in seq_along(groups)) {
+        g_vals <- box_data$value[box_data$Group == groups[i]]
+        stat_val <- "-"
+        pval <- "-"
+        if (i == 1 && length(groups) == 2) {
+            wt <- wilcox.test(g_vals, box_data$value[box_data$Group == groups[2]], exact=FALSE)
+            stat_val <- as.character(wt$statistic)
+            pval <- as.character(round(wt$p.value, 4))
+        }
+        test_df <- rbind(test_df, data.frame(Group=groups[i], median=median(g_vals), quantile=IQR(g_vals), Statistic=stat_val, P.value=pval))
+    }
+    write.table(test_df, file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta_Box.test.xls")), sep="\t", row.names=FALSE, quote=FALSE)
 }
 
-# --- Run all metrics ---
-# BGI organizes Beta/ into metric-specific subdirectories
-if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
-library(pheatmap)
-
+# --- Run all metrics (Flat Directory) ---
 metrics <- list(
     "unweighted_unifrac" = dist_uw,
-    "weighted_unifrac" = dist_w,
-    "bray_curtis" = dist_bc
+    "weighted_unifrac" = dist_w
 )
 
 for (metric_name in names(metrics)) {
-    metric_dir <- file.path(output_dir, metric_name)
-    dir.create(metric_dir, showWarnings = FALSE, recursive = TRUE)
-    
     cat(sprintf("\n=== %s ===\n", metric_name))
-    plot_pcoa_unifrac(metrics[[metric_name]], metric_name, metadata, metric_dir)
-    plot_upgma(metrics[[metric_name]], metric_name, metadata, metric_dir)
-    plot_beta_box(metrics[[metric_name]], metric_name, metadata, metric_dir)
+    plot_pcoa_unifrac(metrics[[metric_name]], metric_name, metadata, output_dir, prefix)
+    plot_upgma(metrics[[metric_name]], metric_name, metadata, output_dir, prefix)
+    export_beta_box(metrics[[metric_name]], metric_name, metadata, output_dir, prefix)
     
     # Distance Heatmap with group annotations (per BGI Section 9)
     target_mat <- as.matrix(metrics[[metric_name]])
@@ -248,8 +256,8 @@ for (metric_name in names(metrics)) {
              annotation_col = anno_df,
              annotation_row = anno_df,
              fontsize = 8,
-             filename = file.path(metric_dir, paste0(metric_name, "_heatmap.png")),
+             filename = file.path(output_dir, paste0(prefix, "_", metric_name, "_heatmap.png")),
              width = 8, height = 7)
 }
 
-print("UniFrac beta diversity analysis (weighted + unweighted + Bray-Curtis) complete.")
+print("UniFrac beta diversity analysis (weighted + unweighted) complete.")

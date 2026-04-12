@@ -3,7 +3,7 @@
 # BGI Amplicon Workflow - Beta Diversity Analysis (Optimized)
 # ==============================================================================
 # Quantifies compositional dissimilarity between samples (Sections 9 and M8)
-# Performs normalization, distance calculation, PCoA, NMDS, and PERMANOVA.
+# Performs normalization, distance calculation, PCoA, and PERMANOVA.
 # ==============================================================================
 
 library(vegan)
@@ -14,6 +14,9 @@ if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU
 if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
 if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Beta"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+comp_suffix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "") comp_suffix else "ALL"
+prefix <- comp_suffix
 
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE, sep = "\t",
@@ -27,8 +30,13 @@ common_samples <- intersect(colnames(otu), rownames(metadata))
 otu <- otu[, common_samples, drop = FALSE]
 metadata <- metadata[common_samples, , drop = FALSE]
 
+# Write mapping files to the parent directory (Beta root)
+map_txt <- data.frame(`#SampleID` = rownames(metadata), Description = metadata$Group, check.names = FALSE)
+write.table(map_txt, file.path(dirname(output_dir), paste0(prefix, ".Mapping.txt")), sep="\t", quote=FALSE, row.names=FALSE)
+map_box <- data.frame(SampleID = rownames(metadata), Description = metadata$Group, check.names = FALSE)
+write.table(map_box, file.path(dirname(output_dir), paste0(prefix, ".Mapping.Box.txt")), sep="\t", quote=FALSE, row.names=FALSE)
+
 # --- Normalization: Rarefaction (Section 9) ---
-# Sub-sampling all samples to the minimum sequencing depth as per BGI report
 min_depth <- min(colSums(otu))
 set.seed(42)  # For reproducibility
 otu_rare <- as.data.frame(t(rrarefy(t(otu), sample = min_depth)))
@@ -36,11 +44,9 @@ otu_rare <- as.data.frame(t(rrarefy(t(otu), sample = min_depth)))
 # --- Beta Diversity Metrics (Bray-Curtis) ---
 dist_bray <- vegdist(t(otu_rare), method = "bray")
 
-# --- PCoA Analysis (Section 9) ---
-# BGI: "PCoA is computed using QIIME's iterative algorithm: 100 iterations
-#       of 75% sub-sampling at the minimum sequencing depth."
-# We replicate with Procrustes-aligned consensus across 100 iterations.
+write.table(as.matrix(dist_bray), file.path(output_dir, paste0("bray_curtis_", prefix, ".Beta_diversity.txt")), sep="\t", quote=FALSE)
 
+# --- PCoA Analysis (Section 9) ---
 n_iter <- 100
 sub_frac <- 0.75
 sub_depth <- floor(min_depth * sub_frac)
@@ -72,12 +78,13 @@ colnames(pcoa_data) <- c("PCoA1", "PCoA2")
 pcoa_data$Group <- metadata$Group
 pcoa_data$Sample <- rownames(pcoa_data)
 
-# Variance explained from the full-depth single PCoA (for axis labels)
-# Note: Bray-Curtis is non-Euclidean and can produce negative eigenvalues;
-# divide by sum of positive eigenvalues only (standard PCoA convention).
-pcoa_full <- cmdscale(dist_bray, k = 3, eig = TRUE)
+# Variance explained from the full-depth single PCoA
+# Compute N-1 axes for accurate coordinate file dumping
+n_max_axes <- min(nrow(metadata) - 1, nrow(metadata))
+pcoa_full <- cmdscale(dist_bray, k = n_max_axes, eig = TRUE)
 pos_eig <- pcoa_full$eig[pcoa_full$eig > 0]
-var_exp <- round(100 * pcoa_full$eig[1:2] / sum(pos_eig), 2)
+n_axes <- length(pos_eig)
+var_exp <- round(100 * pos_eig / sum(pos_eig), 2)
 
 p_pcoa <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
     geom_point(size = 3) +
@@ -87,45 +94,93 @@ p_pcoa <- ggplot(pcoa_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
          x = paste0("PCoA 1 (", var_exp[1], "%)"),
          y = paste0("PCoA 2 (", var_exp[2], "%)"))
 
-ggsave(file.path(output_dir, "PCoA_BrayCurtis.png"), p_pcoa, width = 8, height = 6)
-ggsave(file.path(output_dir, "PCoA_BrayCurtis.pdf"), p_pcoa, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(prefix, ".bray_curtis.PCoA.png")), p_pcoa, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(prefix, ".bray_curtis.PCoA.pdf")), p_pcoa, width = 8, height = 6)
+
+# Coordinate export logic
+coord_df <- as.data.frame(pcoa_full$points[, 1:n_axes, drop=FALSE])
+colnames(coord_df) <- paste0("PCoA", 1:n_axes)
+coord_df$Group <- metadata[rownames(coord_df), "Group"]
+write.table(coord_df, file.path(output_dir, paste0(prefix, ".bray_curtis.coordinate.xls")), sep="\t", row.names=TRUE, col.names=NA, quote=FALSE)
+
+egi_df <- data.frame(t(var_exp))
+colnames(egi_df) <- paste0("PCoA", 1:n_axes)
+write.table(egi_df, file.path(output_dir, paste0(prefix, ".bray_curtis.egi.txt")), sep="\t", row.names=FALSE, quote=FALSE)
 
 # --- PERMANOVA (ADONIS) Analysis ---
-# Evaluates whether group identity significantly explains total beta diversity variance
 if ("Group" %in% colnames(metadata) && length(unique(metadata$Group)) > 1) {
     adonis_res <- adonis2(dist_bray ~ Group, data = metadata, permutations = 999)
-    write.table(as.data.frame(adonis_res), file = file.path(output_dir, "PERMANOVA_result.txt"), sep = "\t", quote = FALSE)
+    adonis_format <- data.frame(Df = adonis_res$Df, SumsOfSqs = adonis_res$SumOfSqs, 
+                                MeanSqs = adonis_res$SumOfSqs / adonis_res$Df,
+                                F.Model = adonis_res$F, R2 = adonis_res$R2, `Pr(>F)` = adonis_res$`Pr(>F)`, 
+                                check.names=FALSE)
+    rownames(adonis_format) <- c("Description", "Residuals", "Total")
+    write.table(adonis_format, file.path(output_dir, paste0(prefix, ".bray_curtis.permanova.test.xls")), sep="\t", quote=FALSE, col.names=NA)
 }
 
+# --- Beta Boxplot Logic ---
+export_beta_box <- function(dist_mat, metric_name, meta, out_dir, pfx) {
+    dist_m <- as.matrix(dist_mat)
+    groups <- sort(unique(meta$Group))
+    
+    box_data <- do.call(rbind, lapply(groups, function(g) {
+        samps <- rownames(meta)[meta$Group == g]
+        if (length(samps) < 2) return(NULL)
+        pairs <- combn(samps, 2)
+        dists <- apply(pairs, 2, function(x) dist_m[x[1], x[2]])
+        data.frame(value = dists, Group = g, stringsAsFactors = FALSE)
+    }))
+    
+    if (is.null(box_data) || nrow(box_data) == 0) return()
+    
+    p_box <- ggplot(box_data, aes(x = Group, y = value, fill = Group)) +
+        geom_boxplot(alpha = 0.8) +
+        theme_bw() +
+        labs(title = paste0("Intra-group Beta Diversity (", metric_name, ")"),
+             y = paste0(metric_name, " Distance"))
+             
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta.Box.png")), p_box, width = 10, height = 6)
+    ggsave(file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta.Box.pdf")), p_box, width = 10, height = 6)
+    
+    write.table(box_data, file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta_Box.xls")), sep="\t", row.names=FALSE, quote=FALSE)
+    
+    test_df <- data.frame(Group = character(), median = numeric(), quantile = numeric(), Statistic = character(), P.value = character())
+    for (i in seq_along(groups)) {
+        g_vals <- box_data$value[box_data$Group == groups[i]]
+        stat_val <- "-"
+        pval <- "-"
+        if (i == 1 && length(groups) == 2) {
+            wt <- wilcox.test(g_vals, box_data$value[box_data$Group == groups[2]], exact=FALSE)
+            stat_val <- as.character(wt$statistic)
+            pval <- as.character(round(wt$p.value, 4))
+        }
+        test_df <- rbind(test_df, data.frame(Group=groups[i], median=median(g_vals), quantile=IQR(g_vals), Statistic=stat_val, P.value=pval))
+    }
+    write.table(test_df, file.path(out_dir, paste0(pfx, ".", metric_name, ".Beta_Box.test.xls")), sep="\t", row.names=FALSE, quote=FALSE)
+}
+
+export_beta_box(dist_bray, "bray_curtis", metadata, output_dir, prefix)
+
 # --- Pearson Dissimilarity (BGI Section 9, Table 5) ---
-# BGI specifies four beta diversity metrics: Bray-Curtis, Weighted UniFrac,
-# Unweighted UniFrac, and Pearson. Pearson distance = 1 - Pearson correlation.
-# Uses a 10-iteration Procrustes-aligned consensus PCoA for stability.
 cat("Computing Pearson dissimilarity...\n")
 cor_pearson <- cor(otu_rare, method = "pearson")
 dist_pearson <- as.dist(1 - cor_pearson)
 
-# Export Pearson distance matrix
-write.table(as.matrix(dist_pearson),
-            file.path(output_dir, "Pearson.Beta_diversity.txt"),
-            sep = "\t", quote = FALSE)
+write.table(as.matrix(dist_pearson), file.path(output_dir, paste0("pearson_", prefix, ".Beta_diversity.txt")), sep="\t", quote=FALSE)
 
-# 10-iteration bootstrapped PCoA (Pearson)
 n_iter_p <- 10
 sub_depth_p <- floor(min_depth * 0.75)
-cat(sprintf("Bootstrapped Pearson PCoA: %d iterations, sub-depth = %d\n",
-            n_iter_p, sub_depth_p))
+cat(sprintf("Bootstrapped Pearson PCoA: %d iterations, sub-depth = %d\n", n_iter_p, sub_depth_p))
 
 set.seed(42)
 pcoa_p_list <- vector("list", n_iter_p)
 for (i in seq_len(n_iter_p)) {
     r <- rrarefy(t(otu), sub_depth_p)
-    cor_r <- cor(t(r), method = "pearson")  # r is 51×5358; t(r) is 5358×51; cor on columns → 51×51
+    cor_r <- cor(t(r), method = "pearson")
     d_r <- as.dist(1 - cor_r)
     pcoa_p_list[[i]] <- cmdscale(d_r, k = 2, eig = FALSE)
 }
 
-# Procrustes-align and average
 ref_p <- pcoa_p_list[[1]]
 aligned_p <- lapply(pcoa_p_list, function(coords) {
     proc <- procrustes(ref_p, coords, symmetric = TRUE)
@@ -133,17 +188,13 @@ aligned_p <- lapply(pcoa_p_list, function(coords) {
 })
 consensus_p <- Reduce("+", aligned_p) / n_iter_p
 
-# Variance explained from single full-depth Pearson PCoA
-pcoa_p_full <- cmdscale(dist_pearson, k = 2, eig = TRUE)
+pcoa_p_full <- cmdscale(dist_pearson, k = n_max_axes, eig = TRUE)
 pos_eig_p <- pcoa_p_full$eig[pcoa_p_full$eig > 0]
-var_exp_p <- round(100 * pcoa_p_full$eig[1:2] / sum(pos_eig_p), 2)
+var_exp_p <- round(100 * pos_eig_p / sum(pos_eig_p), 2)
+n_axes_p <- length(pos_eig_p)
 
-pcoa_p_data <- data.frame(
-    PCoA1 = consensus_p[,1],
-    PCoA2 = consensus_p[,2],
-    Group = metadata$Group,
-    Sample = rownames(consensus_p)
-)
+pcoa_p_data <- data.frame(PCoA1 = consensus_p[,1], PCoA2 = consensus_p[,2],
+                          Group = metadata$Group, Sample = rownames(consensus_p))
 
 p_pcoa_p <- ggplot(pcoa_p_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
     geom_point(size = 3) +
@@ -153,19 +204,28 @@ p_pcoa_p <- ggplot(pcoa_p_data, aes(x = PCoA1, y = PCoA2, color = Group)) +
          x = paste0("PCoA 1 (", var_exp_p[1], "%)"),
          y = paste0("PCoA 2 (", var_exp_p[2], "%)"))
 
-ggsave(file.path(output_dir, "PCoA_Pearson.png"), p_pcoa_p, width = 8, height = 6)
-ggsave(file.path(output_dir, "PCoA_Pearson.pdf"), p_pcoa_p, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(prefix, ".pearson.PCoA.png")), p_pcoa_p, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(prefix, ".pearson.PCoA.pdf")), p_pcoa_p, width = 8, height = 6)
 
-# Pearson PERMANOVA
+coord_df_p <- as.data.frame(pcoa_p_full$points[, 1:n_axes_p, drop=FALSE])
+colnames(coord_df_p) <- paste0("PCoA", 1:n_axes_p)
+coord_df_p$Group <- metadata[rownames(coord_df_p), "Group"]
+write.table(coord_df_p, file.path(output_dir, paste0(prefix, ".pearson.coordinate.xls")), sep="\t", row.names=TRUE, col.names=NA, quote=FALSE)
+
+egi_df_p <- data.frame(t(var_exp_p))
+colnames(egi_df_p) <- paste0("PCoA", 1:n_axes_p)
+write.table(egi_df_p, file.path(output_dir, paste0(prefix, ".pearson.egi.txt")), sep="\t", row.names=FALSE, quote=FALSE)
+
 if ("Group" %in% colnames(metadata) && length(unique(metadata$Group)) >= 2) {
     adonis_pearson <- adonis2(dist_pearson ~ Group, data = metadata, permutations = 999)
-    write.table(as.data.frame(adonis_pearson),
-                file.path(output_dir, "Pearson_PERMANOVA.txt"),
-                sep = "\t", quote = FALSE)
+    adonis_format_p <- data.frame(Df = adonis_pearson$Df, SumsOfSqs = adonis_pearson$SumOfSqs, 
+                                MeanSqs = adonis_pearson$SumOfSqs / adonis_pearson$Df,
+                                F.Model = adonis_pearson$F, R2 = adonis_pearson$R2, `Pr(>F)` = adonis_pearson$`Pr(>F)`, 
+                                check.names=FALSE)
+    rownames(adonis_format_p) <- c("Description", "Residuals", "Total")
+    write.table(adonis_format_p, file.path(output_dir, paste0(prefix, ".pearson.permanova.test.xls")), sep="\t", quote=FALSE, col.names=NA)
 }
 
-# Export Pearson PCoA coordinates
-write.table(pcoa_p_data, file.path(output_dir, "Pearson.coordinate.xls"),
-            sep = "\t", row.names = FALSE, quote = FALSE)
+export_beta_box(dist_pearson, "pearson", metadata, output_dir, prefix)
 
 print("Optimized Beta diversity analysis complete.")

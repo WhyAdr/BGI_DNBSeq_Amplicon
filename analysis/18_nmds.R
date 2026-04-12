@@ -16,6 +16,8 @@ if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
 if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/NMDS"
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
+comp_suffix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "") comp_suffix else "ALL"
+
 # --- Data Loading ---
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
                   sep = "\t", comment.char = "", skip = 1)
@@ -55,11 +57,21 @@ p <- ggplot(nmds_df, aes(x = NMDS1, y = NMDS2, color = Group)) +
     theme_bw() +
     labs(title = "NMDS (Bray-Curtis)")
 
-ggsave(file.path(output_dir, "NMDS_BrayCurtis.png"), p, width = 8, height = 6)
-ggsave(file.path(output_dir, "NMDS_BrayCurtis.pdf"), p, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(comp_suffix, ".NMDS.png")), p, width = 8, height = 6)
+ggsave(file.path(output_dir, paste0(comp_suffix, ".NMDS.pdf")), p, width = 8, height = 6)
 
-# Export coordinates
-write.table(nmds_df, file.path(output_dir, "NMDS_coordinates.xls"),
-            sep = "\t", row.names = FALSE, quote = FALSE)
+# --- BGI Export Formats ---
+
+# 1. NMDS Coordinates (Space delimited, col.names padding)
+nmds_out <- data.frame(NMDS1 = nmds_res$points[, 1], NMDS2 = nmds_res$points[, 2], group = metadata[rownames(nmds_res$points), "Group"])
+write.table(nmds_out, file.path(output_dir, paste0(comp_suffix, ".NMDS.xls")), sep=" ", col.names=NA, quote=FALSE)
+
+# 2. NMDS Group Metadata
+group_df <- data.frame(`#Sample_name` = rownames(metadata), var = metadata$Group, check.names = FALSE)
+colnames(group_df)[2] <- paste0("NMDS.", comp_suffix)
+write.table(group_df, file.path(output_dir, paste0("NMDS.", comp_suffix, ".group.xls")), sep="\t", quote=FALSE, row.names=FALSE)
+
+# 3. NMDS OTU Matrix (Tab delimited)
+write.table(otu_rare, file.path(output_dir, paste0("NMDS.", comp_suffix, ".otu.xls")), sep="\t", col.names=NA, quote=FALSE)
 
 print("NMDS analysis complete.")
