@@ -110,16 +110,45 @@ if (nrow(sig_results) > 0) {
     }
 }
 
-# --- Preparation for LEfSe Analysis (Section 10) ---
-# LEfSe (Linear discriminant analysis Effect Size) identifiers high-dimensional
-# microbial biomarkers that differentiate biological groups.
-lefse_dir <- file.path(output_dir, "LEfSe")
-dir.create(lefse_dir, showWarnings = FALSE)
+# --- Structural preparation for LEfSe Analysis (Strict TXT generation) ---
+lefse_dir <- "../BGI_Result/Lefse"
+dir.create(lefse_dir, showWarnings = FALSE, recursive = TRUE)
 
-# Transpose full relative abundance table for LEfSe formatting
-lefse_in <- cbind(Group = metadata$Group, as.data.frame(t(rel_abund)))
-write.table(t(lefse_in), file = file.path(lefse_dir, "lefse_input.txt"), 
-            sep = "\t", col.names = FALSE, quote = FALSE)
+# Compute multi-level hierarchical aggregation
+# Create full taxonomy strings
+tax_strings <- tax[rownames(rel_abund), "Taxonomy"]
+# Replace ; with | and remove whitespace
+tax_strings <- gsub("; *", "|", tax_strings)
+
+agg_abund_list <- list()
+
+for (i in seq_along(tax_strings)) {
+    full_tax <- tax_strings[i]
+    if (is.na(full_tax) || full_tax == "") next
+    
+    parts <- unlist(strsplit(full_tax, "\\|"))
+    for (j in seq_along(parts)) {
+        sub_tax <- paste(parts[1:j], collapse = "|")
+        if (is.null(agg_abund_list[[sub_tax]])) {
+            agg_abund_list[[sub_tax]] <- rel_abund[i, ]
+        } else {
+            agg_abund_list[[sub_tax]] <- agg_abund_list[[sub_tax]] + rel_abund[i, ]
+        }
+    }
+}
+
+agg_abund <- do.call(rbind, agg_abund_list)
+agg_abund <- agg_abund * 100 # Multiply relative abundance * 100 for LEfSe
+
+# BGI schema format
+out_lefse <- rbind(
+    c("Group", as.character(metadata$Group)),
+    c("Sample", rownames(metadata)),
+    cbind(rownames(agg_abund), format(agg_abund, scientific=FALSE))
+)
+comp_suffix <- paste(sort(unique(metadata$Group)), collapse = "-")
+write.table(out_lefse, file.path(lefse_dir, paste0(comp_suffix, ".OTU_tax_assignments.txt")), 
+            sep = "\t", col.names = FALSE, row.names = FALSE, quote = FALSE)
 
 # ==============================================================================
 # --- Multi-level Differential Analysis (BGI Section 10) ---

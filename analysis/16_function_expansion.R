@@ -99,7 +99,8 @@ for (pw_name in names(pathways)) {
             labs(title = paste0("Top ", top_n, " ", pw_name, " (", level_name, ")"),
                  y = "Relative Abundance")
 
-        ggsave(file.path(barplot_dir, paste0("Sample.", pw_name, ".", level_name, ".png")),
+        comp_suffix <- paste(sort(unique(meta_sub$Group)), collapse = "-")
+        ggsave(file.path(barplot_dir, paste0(comp_suffix, ".Sample.", pw_name, ".", level_name, ".png")),
                p, width = 14, height = 8)
 
         # --- Group-level barplot ---
@@ -114,7 +115,7 @@ for (pw_name in names(pathways)) {
                 theme_bw() +
                 labs(title = paste0("Group Mean - ", pw_name, " (", level_name, ")"),
                      y = "Mean Relative Abundance")
-            ggsave(file.path(barplot_dir, paste0("Group.", pw_name, ".", level_name, ".png")),
+            ggsave(file.path(barplot_dir, paste0(comp_suffix, ".Group.", pw_name, ".", level_name, ".png")),
                    p_g, width = 10, height = 7)
         }
 
@@ -132,7 +133,7 @@ for (pw_name in names(pathways)) {
                      clustering_method = "complete",
                      main = paste0(pw_name, " ", level_name, " (log10)"),
                      filename = file.path(heatmap_dir,
-                                          paste0("Heatmap.", pw_name, ".", level_name, ".png")),
+                                          paste0(comp_suffix, ".Heatmap.", pw_name, ".", level_name, ".png")),
                      width = 12, height = 8)
         }, error = function(e) cat(sprintf("    Heatmap error: %s\n", e$message)))
 

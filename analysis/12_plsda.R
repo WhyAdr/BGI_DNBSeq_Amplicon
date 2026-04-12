@@ -40,15 +40,23 @@ plsda_df <- data.frame(Comp1 = plsda_res$variates$X[, 1],
                         Comp2 = plsda_res$variates$X[, 2],
                         Group = Y)
 
-p <- ggplot(plsda_df, aes(x = Comp1, y = Comp2, color = Group)) +
-    geom_point(size = 3) +
-    stat_ellipse(level = 0.95, linetype = 2) +
-    theme_bw() +
-    labs(title = "PLS-DA (OTU-level)",
-         x = paste0("Component 1 (", var_exp[1], "%)"),
-         y = paste0("Component 2 (", var_exp[2], "%)"))
+# Base R / mixOmics native plotting
+comp_suffix <- paste(sort(unique(Y)), collapse = "-")
+png(file.path(output_dir, paste0(comp_suffix, ".PLSDA.png")), width = 800, height = 800, res = 120)
+plotIndiv(plsda_res, comp = c(1,2), rep.space = "X-variate", ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title = "OTU BASED PLS-DA ANALYSIS")
+dev.off()
 
-ggsave(file.path(output_dir, "PLSDA_plot.png"), p, width = 8, height = 6)
-ggsave(file.path(output_dir, "PLSDA_plot.pdf"), p, width = 8, height = 6)
+pdf(file.path(output_dir, paste0(comp_suffix, ".PLSDA.pdf")), width = 8, height = 8)
+plotIndiv(plsda_res, comp = c(1,2), rep.space = "X-variate", ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title = "OTU BASED PLS-DA ANALYSIS")
+dev.off()
+
+# Export required XLS coordinates and variance
+write.table(plsda_df, file.path(output_dir, paste0(comp_suffix, ".sample_coordinate.xls")), 
+            sep = "\t", quote = FALSE, row.names = TRUE)
+write.table(data.frame(PC1 = var_exp[1]/100, PC2 = var_exp[2]/100), 
+            file.path(output_dir, paste0(comp_suffix, ".explained_variance.xls")), 
+            sep = "\t", quote = FALSE, row.names = FALSE)
 
 print("PLS-DA analysis complete.")
