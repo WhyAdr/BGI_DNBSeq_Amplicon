@@ -128,6 +128,27 @@ for (metric in metrics_to_plot) {
     ggsave(file.path(output_dir, paste0(metric, "_boxplot.pdf")), p, width = 8, height = 6)
 }
 
+# --- Combined Alpha Diversity Plot (BGI Multi-Panel Figure) ---
+# BGI also concatenates all diversity plots into a single prefixed image
+alpha_long <- reshape2::melt(alpha_data, id.vars = c("Sample_Name", group_col),
+                             measure.vars = metrics_to_plot, variable.name = "Metric", value.name = "Value")
+                             
+p_combined <- ggplot(alpha_long, aes(x = .data[[group_col]], y = Value, fill = .data[[group_col]])) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.8) +
+    geom_jitter(width = 0.2, alpha = 0.5) +
+    facet_wrap(~ Metric, scales = "free_y", ncol = 3) +
+    theme_bw() +
+    labs(title = "Alpha Diversity Indices", x = "Group", y = "Value") +
+    theme(legend.position = "bottom")
+
+if (!is.null(test_method)) {
+    p_combined <- p_combined + stat_compare_means(method = test_method)
+}
+
+comp_name <- if (exists("comp_suffix")) comp_suffix else "All"
+ggsave(file.path(output_dir, paste0(comp_name, ".Alpha.boxplot.png")), p_combined, width = 12, height = 8)
+ggsave(file.path(output_dir, paste0(comp_name, ".Alpha.boxplot.pdf")), p_combined, width = 12, height = 8)
+
 # Write unified Alpha test result file (all metrics in one table)
 if (length(alpha_test_rows) > 0) {
     result_df <- do.call(rbind, alpha_test_rows)
