@@ -84,8 +84,11 @@ for (pw_name in names(pathways)) {
         top_n <- min(20, nrow(pw_rel))
         top_names <- rownames(pw_rel)[1:top_n]
 
+        # Output isolation mechanism
+        out_pw_dir <- file.path(output_dir, "Function_Prdeict", pw_name)
+
         # --- Barplot (sample level) ---
-        barplot_dir <- file.path(pw_info$dir, "barplot")
+        barplot_dir <- file.path(out_pw_dir, "barplot")
         dir.create(barplot_dir, showWarnings = FALSE, recursive = TRUE)
 
         plot_df <- melt(as.matrix(pw_rel[top_names, common, drop = FALSE]))
@@ -129,7 +132,7 @@ for (pw_name in names(pathways)) {
         }
 
         # --- Heatmap (log10) ---
-        heatmap_dir <- file.path(pw_info$dir, "heatmap")
+        heatmap_dir <- file.path(out_pw_dir, "heatmap")
         dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
 
         heatmap_mat <- pw_rel[top_names, common, drop = FALSE]
