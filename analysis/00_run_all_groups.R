@@ -107,6 +107,10 @@ for (comp_name in names(comparisons)) {
             # Input-only dirs — must NOT be redirected
             input_only <- c("otu_dir", "tree_dir_beta", "tree_dir_genus", "base_dir")
 
+            # Flat modules — comp_suffix goes in FILENAME, not directory
+            # Match against the last component of the BGI_Result path
+            flat_dirs <- c("PLSDA", "NMDS", "Picrust", "Function_Diff")
+
             # Find all lines like: var_name <- "../BGI_Result/..."
             dir_pattern <- "^if\\s*\\(!exists.*\\)\\s+(\\w+_dir)\\s*<-\\s*\"([^\"]+)\""
             bare_pattern <- "^(\\w+_dir)\\s*<-\\s*\"([^\"]+)\""
@@ -127,7 +131,11 @@ for (comp_name in names(comparisons)) {
                 if (!grepl("BGI_Result", var_path)) next
 
                 new_path <- gsub("BGI_Result", "BGI_Reproduced", var_path)
-                new_path <- file.path(new_path, comp_suffix)
+                # Only nest into comp_suffix subdirectory for non-flat modules
+                path_tail <- basename(var_path)
+                if (!path_tail %in% flat_dirs) {
+                    new_path <- file.path(new_path, comp_suffix)
+                }
                 env[[var_name]] <- new_path
                 dir.create(env[[var_name]], showWarnings = FALSE, recursive = TRUE)
             }

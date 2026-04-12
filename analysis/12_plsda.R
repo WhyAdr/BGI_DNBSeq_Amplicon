@@ -36,9 +36,11 @@ Y <- as.factor(metadata[common_samples, "Group"])
 plsda_res <- plsda(X, Y, ncomp = 2)
 var_exp <- round(plsda_res$prop_expl_var$X * 100, 2)
 
-plsda_df <- data.frame(Comp1 = plsda_res$variates$X[, 1],
-                        Comp2 = plsda_res$variates$X[, 2],
-                        Group = Y)
+plsda_df <- data.frame(sample = rownames(plsda_res$variates$X),
+                        `X-variate1` = plsda_res$variates$X[, 1],
+                        `X-variate2` = plsda_res$variates$X[, 2],
+                        group = Y,
+                        check.names = FALSE)
 
 # Base R / mixOmics native plotting
 comp_suffix <- paste(sort(unique(Y)), collapse = "-")
@@ -54,8 +56,8 @@ dev.off()
 
 # Export required XLS coordinates and variance
 write.table(plsda_df, file.path(output_dir, paste0(comp_suffix, ".sample_coordinate.xls")), 
-            sep = "\t", quote = FALSE, row.names = TRUE)
-write.table(data.frame(PC1 = var_exp[1]/100, PC2 = var_exp[2]/100), 
+            sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(data.frame(`X-variate1` = var_exp[1], `X-variate2` = var_exp[2], check.names = FALSE), 
             file.path(output_dir, paste0(comp_suffix, ".explained_variance.xls")), 
             sep = "\t", quote = FALSE, row.names = FALSE)
 
