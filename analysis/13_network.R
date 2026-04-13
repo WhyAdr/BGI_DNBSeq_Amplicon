@@ -2,158 +2,195 @@
 # 13_network.R
 # BGI Amplicon Workflow - Co-occurrence Network & Correlation Heatmap
 # ==============================================================================
-# Replicates BGI Network directory.
-# Software reference: R v3.4.1; Cytoscape per BGI report.
-# Spearman rank correlation, |rho| > 0.2 threshold, network + heatmap.
+# Replicates BGI Network directory with 1:1 parity (naming, formats, matrices).
 # ==============================================================================
 
 if (!requireNamespace("igraph", quietly = TRUE)) install.packages("igraph")
 if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
+if (!requireNamespace("psych", quietly = TRUE)) install.packages("psych")
+if (!requireNamespace("scales", quietly = TRUE)) install.packages("scales")
+
 library(igraph)
 library(pheatmap)
+library(psych)
+library(scales)
 
-# --- Configuration ---
+# --- Configuration & Prefixing ---
 if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
 if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
 if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Network"
-dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-# --- Data Loading ---
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+group_prefix <- basename(output_dir)
+
+# --- 1. Data Loading & Exact Subsetting (Fixes 'All Samples' Bug) ---
+cat(sprintf("Running Network analysis for group: %s\n", group_prefix))
 otu <- read.table(otu_file, header = TRUE, row.names = 1, check.names = FALSE,
                   sep = "\t", comment.char = "", skip = 1)
 if ("taxonomy" %in% colnames(otu)) otu$taxonomy <- NULL
 
-# --- Filter: keep OTUs with relative abundance > 0.5% (per BGI Section 12) ---
-otu_rel <- sweep(otu, 2, colSums(otu), "/")
-keep <- rowMeans(otu_rel) > 0.005
-otu_filt <- otu[keep, ]
+meta_data <- read.table(meta_file, header = TRUE, row.names = 1, check.names = FALSE,
+                        sep = "\t", comment.char = "")
 
-if (nrow(otu_filt) < 5) {
-    print("Too few OTUs passed filtering. Lowering threshold to 0.1%.")
-    keep <- rowMeans(otu_rel) > 0.001
-    otu_filt <- otu[keep, ]
+# Intersect to get group-specific samples
+common_samples <- intersect(colnames(otu), rownames(meta_data))
+if (length(common_samples) < 3) {
+    stop("Error: Fewer than 3 samples found for this group. Correlation analysis requires more samples.")
 }
 
-cat(sprintf("Network analysis using %d OTUs (rel. abund. > 0.5%%).\n", nrow(otu_filt)))
+otu_sub <- otu[, common_samples, drop = FALSE]
+otu_sub <- otu_sub[rowSums(otu_sub) > 0, , drop = FALSE]
 
-# --- Load Taxonomy for biological labels ---
+# --- 2. Load Taxonomy & Parse Species Labels ---
 tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
 if (file.exists(tax_file)) {
     tax_data <- read.table(tax_file, header = TRUE, row.names = 1, check.names = FALSE,
                            sep = "\t", comment.char = "")
-    # Parse deepest non-trivial taxonomic rank for each OTU in otu_filt
-    deepest_tax <- sapply(rownames(otu_filt), function(otu_id) {
+    
+    # Parse deepest labels (Species_name)
+    deepest_tax <- sapply(rownames(otu_sub), function(otu_id) {
         if (!otu_id %in% rownames(tax_data)) return(otu_id)
         tx <- as.character(tax_data[otu_id, "Taxonomy"])
         parts <- trimws(unlist(strsplit(tx, ";")))
         parts <- parts[parts != "" & parts != "Unclassified" & !grepl("__$", parts)]
-        if (length(parts) > 0) return(sub("^[a-z]__", "", tail(parts, 1)))
+        if (length(parts) > 0) return(gsub(" ", "_", sub("^[a-z]__", "", tail(parts, 1))))
         return(otu_id)
     })
-    names(deepest_tax) <- rownames(otu_filt)
+    
+    # Parse Phylum for network coloring
+    phylum_tax_map <- sapply(rownames(otu_sub), function(otu_id) {
+        if (!otu_id %in% rownames(tax_data)) return("Unclassified")
+        parts <- unlist(strsplit(as.character(tax_data[otu_id, "Taxonomy"]), ";"))
+        if (length(parts) >= 2) return(parts[2]) else return("Unclassified")
+    })
 } else {
-    deepest_tax <- setNames(rownames(otu_filt), rownames(otu_filt))
+    deepest_tax <- setNames(rownames(otu_sub), rownames(otu_sub))
+    phylum_tax_map <- setNames(rep("Unclassified", length(deepest_tax)), rownames(otu_sub))
 }
 
-# --- Spearman Correlation (vectorized) ---
-if (!requireNamespace("psych", quietly = TRUE)) install.packages("psych")
-library(psych)
-cor_result <- corr.test(t(otu_filt), method = "spearman", adjust = "none")
+# --- 3. Mandatory Species Aggregation (Prevents pheatmap collision bug) ---
+agg_df <- aggregate(otu_sub, by = list(Taxon = deepest_tax), FUN = sum)
+rownames(agg_df) <- agg_df$Taxon
+agg_df$Taxon <- NULL
+
+# Re-map Phylum for the aggregated species
+u_taxa <- rownames(agg_df)
+taxon_phylum <- sapply(u_taxa, function(tax_name) {
+    # Pick phylum of the first OTU belonging to this species (usually they are all same)
+    orig_otus <- names(deepest_tax)[deepest_tax == tax_name]
+    return(phylum_tax_map[orig_otus[1]])
+})
+
+# --- 4. Filtering & Relative Abundance ---
+otu_rel <- sweep(agg_df, 2, colSums(agg_df), "/")
+keep <- rowMeans(otu_rel) > 0.005
+if (sum(keep) < 5) keep <- rowMeans(otu_rel) > 0.001
+
+otu_filt_rel <- otu_rel[keep, , drop = FALSE]
+n_taxa <- nrow(otu_filt_rel)
+
+# --- 5. Abundance Table Export (BGI Parity: A-B.xls) ---
+# Includes "Other" row to sum to 1.0
+other_abund <- pmax(0, 1 - colSums(otu_filt_rel))
+abund_export <- rbind(otu_filt_rel, Other = other_abund)
+write.table(cbind(SampleName = rownames(abund_export), abund_export),
+            file.path(output_dir, paste0(group_prefix, ".xls")),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+# --- 6. Spearman Correlation ---
+cor_result <- psych::corr.test(t(otu_filt_rel), method = "spearman", adjust = "none")
 cor_mat <- cor_result$r
 p_mat <- cor_result$p
-n_otus <- nrow(otu_filt)
 
-# --- FDR Correction (Benjamini-Hochberg) ---
-# With many pairwise tests, FDR correction prevents false-positive correlations.
+# FDR for Heatmap annotation
 p_vec <- p_mat[upper.tri(p_mat)]
 p_adj_vec <- p.adjust(p_vec, method = "BH")
-p_adj_mat <- matrix(1, n_otus, n_otus)
+p_adj_mat <- matrix(1, n_taxa, n_taxa)
 p_adj_mat[upper.tri(p_adj_mat)] <- p_adj_vec
 p_adj_mat[lower.tri(p_adj_mat)] <- t(p_adj_mat)[lower.tri(p_adj_mat)]
 diag(p_adj_mat) <- 1
 
-# --- Correlation Heatmap (BGI Section 12: Spearman Correlation Heatmap) ---
-# Only display |rho| > 0.2 (per BGI report)
+# --- 7. Wide Matrix Export (BGI Parity: A-B.Correlation.Result.xls) ---
+write.table(cbind(Taxon = rownames(cor_mat), cor_mat),
+            file.path(output_dir, paste0(group_prefix, ".Correlation.Result.xls")),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+# --- 8. Heatmap Plotting (PDF + PNG) ---
 cor_display <- cor_mat
 cor_display[abs(cor_mat) <= 0.2] <- 0
 
-# Significance star annotation matrix (FDR-corrected)
-sig_stars <- matrix("", n_otus, n_otus)
+sig_stars <- matrix("", n_taxa, n_taxa)
 sig_stars[p_adj_mat < 0.05]  <- "*"
 sig_stars[p_adj_mat < 0.01]  <- "**"
 sig_stars[p_adj_mat < 0.001] <- "***"
-sig_stars[abs(cor_mat) <= 0.2] <- ""  # Blank out non-displayed correlations
+sig_stars[abs(cor_mat) <= 0.2] <- ""
 
-pheatmap(cor_display,
-         clustering_method = "complete",
-         color = colorRampPalette(c("blue", "white", "red"))(100),
-         display_numbers = sig_stars,
-         number_color = "black",
-         fontsize_number = 6,
-         main = "Species Spearman Correlation (|rho| > 0.2, FDR-corrected)",
-         filename = file.path(output_dir, "Correlation_Heatmap.png"),
-         width = 12, height = 10)
+h_main <- paste(group_prefix, "Spearman Correlation (|rho|>0.2, FDR-corrected)")
+h_colors <- colorRampPalette(c("#4169E1", "white", "#FF69B4"))(100)
 
-# Export correlation results (with FDR-corrected p-values)
-cor_results <- data.frame()
-for (i in 1:(n_otus - 1)) {
-    for (j in (i + 1):n_otus) {
-        if (abs(cor_mat[i, j]) > 0.2) {
-            cor_results <- rbind(cor_results, data.frame(
-                OTU1 = rownames(otu_filt)[i],
-                OTU2 = rownames(otu_filt)[j],
-                Spearman_rho = round(cor_mat[i, j], 4),
-                P_value = p_mat[i, j],
-                FDR = p_adj_mat[i, j]
-            ))
-        }
-    }
-}
-write.table(cor_results, file.path(output_dir, "Correlation_Result.xls"),
-            sep = "\t", row.names = FALSE, quote = FALSE)
+pheatmap(cor_display, clustering_method = "complete", color = h_colors,
+         display_numbers = sig_stars, number_color = "black", fontsize_number = 7,
+         main = h_main, filename = file.path(output_dir, paste0(group_prefix, ".correlation.png")),
+         width = 12, height = 11)
 
-# --- Network (BGI Section 12: Network Analysis) ---
-# Threshold: |rho| > 0.6 and p < 0.05 for network edges
+pdf(file.path(output_dir, paste0(group_prefix, ".correlation.pdf")), width = 12, height = 11)
+pheatmap(cor_display, clustering_method = "complete", color = h_colors,
+         display_numbers = sig_stars, number_color = "black", fontsize_number = 7,
+         main = h_main)
+dev.off()
+
+# --- 9. Network Analysis & Cytoscape Aesthetics ---
 adj_mat <- cor_mat
+# Threshold: |rho| > 0.6 and p_adj < 0.05
 adj_mat[abs(cor_mat) < 0.6 | p_adj_mat >= 0.05] <- 0
 diag(adj_mat) <- 0
 
-g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE,
-                                  diag = FALSE)
-# Remove isolated nodes
-g <- igraph::delete_vertices(g, igraph::degree(g) == 0)
+g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE, diag = FALSE)
+g <- delete_vertices(g, degree(g) == 0)
 
 if (vcount(g) > 0) {
-    # Edge colors: pink = positive, blue = negative (per BGI report)
-    E(g)$color <- ifelse(E(g)$weight > 0, "#FF69B4", "#4169E1")
-    E(g)$width <- abs(E(g)$weight) * 3
-
-    # Node size proportional to mean relative abundance
-    node_means <- rowMeans(otu_rel[V(g)$name, ])
-    V(g)$size <- scales::rescale(node_means, to = c(3, 15))
-
-    # Assign taxonomic labels to vertices
-    V(g)$label <- deepest_tax[V(g)$name]
-
-    # Freeze layout PRNG for reproducible geometries across runs
+    # Phylum-based node colors
+    t_phyla <- taxon_phylum[V(g)$name]
+    t_phyla[is.na(t_phyla) | t_phyla == ""] <- "Unclassified"
+    
+    u_phyla <- unique(t_phyla)
+    p_palette <- rainbow(length(u_phyla), s = 0.5, v = 0.9)
+    names(p_palette) <- u_phyla
+    if ("Unclassified" %in% names(p_palette)) p_palette["Unclassified"] <- "#D3D3D3" # Light Grey
+    
+    V(g)$color <- p_palette[t_phyla]
+    V(g)$frame.color <- "white"
+    
+    # Pink (+) / Blue (-) edges
+    E(g)$color <- ifelse(E(g)$weight > 0, adjustcolor("#FFB6C1", 0.8), adjustcolor("#ADD8E6", 0.8))
+    E(g)$width <- abs(E(g)$weight) * 4
+    
+    # Scaling node size by mean relative abundance
+    node_means <- rowMeans(otu_filt_rel[V(g)$name, , drop=FALSE])
+    V(g)$size <- rescale(node_means, to = c(5, 18))
+    
     set.seed(123)
     fr_layout <- layout_with_fr(g, weights = abs(E(g)$weight))
 
-    png(file.path(output_dir, "CoOccurrence_Network.png"),
-        width = 1000, height = 1000, res = 120)
-    plot(g, vertex.label.cex = 0.7, vertex.label.color = "black",
-         layout = fr_layout,
-         main = "Co-occurrence Network (|rho|>0.6, P<0.05)")
-    legend("bottomleft", legend = c("Positive", "Negative"),
-           col = c("#FF69B4", "#4169E1"), lwd = 2, bty = "n")
-    dev.off()
-
-    # Export edge list
-    edge_df <- as_data_frame(g, what = "edges")
-    write.table(edge_df, file.path(output_dir, "Network_edges.txt"),
-                sep = "\t", row.names = FALSE, quote = FALSE)
+    for (ext in c("png", "pdf")) {
+        if (ext == "png") {
+            png(file.path(output_dir, paste0(group_prefix, ".network.png")), width = 1000, height = 1000, res = 130)
+        } else {
+            pdf(file.path(output_dir, paste0(group_prefix, ".network.pdf")), width = 10, height = 10)
+        }
+        
+        plot(g, vertex.label.cex = 0.8, vertex.label.color = "black",
+             vertex.label.font = 2, vertex.label.dist = 1.2,
+             edge.curved = 0.15, layout = fr_layout,
+             main = paste(group_prefix, "Co-occurrence Network (|rho|>0.6, P<0.05)"))
+        
+        legend("bottomleft", legend = c("Positive", "Negative"),
+               col = c("#FFB6C1", "#ADD8E6"), lwd = 4, bty = "n", title = "Correlation")
+        legend("bottomright", legend = names(p_palette), col = p_palette, pch = 16, bty = "n", title = "Phylum")
+        dev.off()
+    }
 } else {
-    print("No significant edges found at |rho|>0.6, P<0.05 threshold.")
+    cat("No significant edges found for network in group", group_prefix, "\n")
 }
 
-print("Network and correlation analysis complete.")
+cat(sprintf("Network analysis parity complete for %s.\n", group_prefix))
