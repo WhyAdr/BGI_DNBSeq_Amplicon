@@ -56,17 +56,17 @@ compute_metric <- function(comm_vec, metric_name) {
     switch(metric_name,
         "observed_species" = sum(comm_vec > 0),
         "chao" = {
-            res <- tryCatch(estimateR(comm_vec), error = function(e) NULL)
+            res <- tryCatch(vegan::estimateR(comm_vec), error = function(e) NULL)
             if (is.null(res)) return(sum(comm_vec > 0))
             as.numeric(res["S.chao1"])
         },
         "ace" = {
-            res <- tryCatch(estimateR(comm_vec), error = function(e) NULL)
+            res <- tryCatch(vegan::estimateR(comm_vec), error = function(e) NULL)
             if (is.null(res)) return(sum(comm_vec > 0))
             as.numeric(res["S.ACE"])
         },
-        "shannon" = diversity(comm_vec, index = "shannon"),
-        "simpson" = 1 - diversity(comm_vec, index = "simpson"),
+        "shannon" = vegan::diversity(comm_vec, index = "shannon"),
+        "simpson" = 1 - vegan::diversity(comm_vec, index = "simpson"),
         "coverage" = {
             n <- sum(comm_vec)
             if (n == 0) return(0)

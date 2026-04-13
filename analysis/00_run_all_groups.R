@@ -108,7 +108,9 @@ for (comp_name in names(comparisons)) {
 
             # Flat modules — comp_suffix goes in FILENAME, not directory
             # Match against the last component of the BGI_Result path
-            flat_dirs <- c("PLSDA", "NMDS", "Picrust", "Function_Diff")
+            flat_dirs <- c("PLSDA", "NMDS", "Picrust", "Function_Diff",
+                           "Alpha_Rarefaction", "Alpha_Box", "Cumulative_Curve",
+                           "OTU_Rank", "PCA")
 
             # Find all lines like: var_name <- "../BGI_Result/..."
             dir_pattern <- "^if\\s*\\(!exists.*\\)\\s+(\\w+_dir)\\s*<-\\s*\"([^\"]+)\""
