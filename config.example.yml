@@ -1,5 +1,9 @@
 # config.yml — BGI Amplicon Pipeline Configuration
 # All paths are relative to this file's parent directory.
+#
+# NOTE: If you used `analysis/utils/bootstrap_workspace.R` to create
+# a portable workspace, your paths will automatically be mapped to `data/`
+# and `output/` instead of `BGI_Result/` and `BGI_Reproduced/`.
 
 input:
   metadata:       metadata.tsv
