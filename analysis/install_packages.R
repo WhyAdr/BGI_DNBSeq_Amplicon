@@ -9,6 +9,7 @@ cat("==================================================================\n\n")
 
 # --- CRAN Packages ---
 cran_pkgs <- c(
+    "yaml", "optparse",
     "vegan", "ggplot2", "reshape2", "ggpubr", "pheatmap",
     "randomForest", "caret", "pROC", "ape", "igraph",
     "cluster", "ade4", "clusterSim", "VennDiagram", "UpSetR", "scales",

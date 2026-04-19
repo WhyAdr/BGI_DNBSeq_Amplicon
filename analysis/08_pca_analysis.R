@@ -19,10 +19,13 @@
 library(ggplot2)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/PCA"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+meta_file  <- cfg$input$metadata
+otu_dir    <- cfg$input$otu_dir
+output_dir <- cfg$output$pca
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Subgroup suffix (set by wrapper 00_run_all_groups.R) ---

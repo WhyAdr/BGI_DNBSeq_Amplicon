@@ -12,10 +12,13 @@ library(reshape2)
 library(pheatmap)
 
 # --- Configuration ---
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("base_dir") || is.null(base_dir)) base_dir <- "../BGI_Result/Picrust/Function_Prdeict"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Picrust"
-if (!exists("diff_dir") || is.null(diff_dir)) diff_dir <- file.path(output_dir, "Function_Diff")
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+meta_file  <- cfg$input$metadata
+base_dir   <- cfg$input$picrust_dir
+output_dir <- cfg$output$picrust
+diff_dir   <- cfg$output$function_diff
 dir.create(diff_dir, showWarnings = FALSE, recursive = TRUE)
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)

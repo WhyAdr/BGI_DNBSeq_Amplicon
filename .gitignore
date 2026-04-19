@@ -5,6 +5,10 @@ BGI_Result/
 BGI_Reproduced/
 BGI_Purged/
 
+# Local pipeline config (copy config.example.yml to config.yml)
+config.yml
+!config.example.yml
+
 # Pipeline run logs
 pipeline_run*.log
 

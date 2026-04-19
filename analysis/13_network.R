@@ -16,9 +16,12 @@ library(psych)
 library(scales)
 
 # --- Configuration & Prefixing ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Network"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+meta_file  <- cfg$input$metadata
+output_dir <- cfg$output$network
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 group_prefix <- basename(output_dir)
@@ -42,7 +45,7 @@ otu_sub <- otu[, common_samples, drop = FALSE]
 otu_sub <- otu_sub[rowSums(otu_sub) > 0, , drop = FALSE]
 
 # --- 2. Load Taxonomy & Parse Species Labels ---
-tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
+tax_file <- cfg$input$taxonomy
 if (file.exists(tax_file)) {
     tax_data <- read.table(tax_file, header = TRUE, row.names = 1, check.names = FALSE,
                            sep = "\t", comment.char = "")

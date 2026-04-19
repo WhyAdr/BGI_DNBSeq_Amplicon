@@ -10,10 +10,13 @@ library(reshape2)
 library(pheatmap)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("tax_file") || is.null(tax_file)) tax_file <- "../BGI_Result/OTU/OTU_taxonomy.xls"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Barplot"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+tax_file   <- cfg$input$taxonomy
+meta_file  <- cfg$input$metadata
+output_dir <- cfg$output$barplot
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
@@ -88,7 +91,7 @@ ggsave(file.path(output_dir, "Phylum_Barplot.pdf"), p, width = 12, height = 7)
 
 # --- Abundance Heatmap (Section 7) ---
 # Hierarchically clustered heatmaps display species relative abundance.
-if (!exists("heatmap_dir") || is.null(heatmap_dir)) heatmap_dir <- "../BGI_Result/Heatmap"
+heatmap_dir <- cfg$output$heatmap
 dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Add small pseudo-count to avoid log10(0) based on actual data minimum

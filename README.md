@@ -121,28 +121,33 @@ Rscript 00_run_all_groups.R
 
 ### What `00_run_all_groups.R` Does
 
-1. Reads `metadata.tsv` and iterates through 11 predefined group comparisons
-2. For each comparison, writes a temporary subset metadata file (`metadata_{comparison}.tsv`)
-3. Sources 17 analysis scripts in a sandboxed `new.env()` R environment
-4. Parses each script for `*_dir` variable assignments and redirects output paths from `BGI_Result/` to `BGI_Reproduced/`, while preserving input-only directories (`otu_dir`, `tree_dir_beta`, `tree_dir_genus`, `base_dir`)
-5. Applies flat-directory routing for modules that BGI outputs without group subdirectories
+1. Loads the central `config.yml` configuration (which overrides `config.example.yml`)
+2. Iterates through the 11 predefined group comparisons defined in the config
+3. For each comparison, writes a temporary subset metadata file (`metadata_{comparison}.tsv`)
+4. Injects a dynamically modified configuration object (`cfg`) into a sandboxed `new.env()` that correctly points outputs to comparison-specific subdirectories without touching inputs
+5. Sources 17 analysis scripts sequentially using the shared config object
 6. Reports OK/ERROR status for each script × comparison pair
 
 ### Running Individual Scripts
 
-Each script can also run standalone:
+Each script is fully portable and can run standalone via CLI arguments:
+
+```bash
+cd analysis
+Rscript 01_alpha_diversity.R --config ../config.yml --comparison A-B --output-dir /tmp/test
+```
+
+Or run interactively from an R console:
 
 ```r
 setwd("analysis")
-
-# Override defaults before sourcing:
-meta_file <- "../metadata.tsv"
-output_dir <- "../BGI_Reproduced/Alpha_Box"
-
+# 1. Load config utility
+source("utils/load_config.R")
+# 2. Inject configuration into environment
+cfg <- load_config("../config.yml")
+# 3. Source the desired script
 source("01_alpha_diversity.R")
 ```
-
-All configuration variables are guarded with `if (!exists(...) || is.null(...))`, allowing the wrapper or user to inject overrides without modifying script source.
 
 ### Input Data
 
@@ -160,17 +165,14 @@ The pipeline reads from 4 directories inside `BGI_Result/` (gitignored, not incl
 
 ## Key Design Decisions
 
-- **Path injection:** All scripts use `if (!exists("var") || is.null(var))` guards, enabling the master wrapper to redirect outputs to `BGI_Reproduced/` while keeping `BGI_Result/` read-only.
-- **Input/output separation:** The wrapper explicitly excludes input-only directories (`otu_dir`, `base_dir`, `tree_dir_beta`, `tree_dir_genus`) from output redirection to avoid breaking file discovery.
-- **Flat-directory whitelist:** Modules whose BGI reference outputs are flat (no group subdirectories) — `Alpha_Rarefaction`, `Alpha_Box`, `Cumulative_Curve`, `OTU_Rank`, `PCA`, `PLSDA`, `NMDS`, `Picrust`, `Function_Diff` — are routed flat via the `flat_dirs` whitelist in `00_run_all_groups.R`.
+- **Config-Driven Architecture:** All hardcoded paths and pipeline logic are centralized in `config.yml`. The master orchestrator simply orchestrates variables rather than hacking R source code regex.
+- **Input/output separation:** `config.yml` properly segregates all directories into `input` vs `output` domains, fully guarding the read-only contract of the `BGI_Result/` deliverable structure.
+- **Flat-directory whitelist:** Modules whose BGI reference outputs are flat (no group subdirectories) — `Alpha_Rarefaction`, `Alpha_Box`, `Cumulative_Curve`, `OTU_Rank`, `PCA`, `PLSDA`, `NMDS`, `Picrust`, `Function_Diff` — are controlled via the `flat_modules` array directly in `config.yml`.
 - **Explicit namespacing:** Function calls like `vegan::diversity()` and `vegan::estimateR()` are explicitly namespaced to prevent function masking when `igraph`, `caret`, `randomForest`, or `psych` load competing generics in the same session.
 - **Defensive loading:** `make.unique()` is used for row names in PICRUSt tables where duplicate pathway IDs exist in BGI deliverables.
 - **DCA fallback:** `decorana()` is wrapped in `tryCatch` — comparisons where DCA fails to converge (high sparsity) gracefully fall back to RDA.
 
 ## Known Issues
-
-- **Lefse write leak:** `04_differential_analysis.R` (line 240) writes LEfSe input files directly to `../BGI_Result/Lefse/` instead of routing through `output_dir`. This violates the read-only contract on `BGI_Result/`.
-- **Hardcoded L6 path:** `14_enterotypes.R` (line 36) hardcodes `../BGI_Result/OTU/OTU_table_L6.txt` instead of using the `otu_dir` variable, bypassing the orchestrator's input-directory protection.
 - **CRAN mirror error:** `14_enterotypes.R` may report a CRAN mirror warning when `clusterSim` is not pre-installed.
 - **"Too few points" warnings:** Expected behavior in beta diversity and NMDS modules for group subsets with very small sample sizes (e.g., 2-group comparisons with 3 samples each).
 
@@ -193,6 +195,14 @@ The pipeline runs the following 11 group comparisons as defined in the BGI repor
 | All 17 groups | A–Q | 51 |
 
 ## Changelog
+
+### 2026-04-19: Config-Driven Pipeline Refactor
+- Eliminated 50+ hardcoded `../BGI_Result/` paths across all 18 scripts.
+- Introduced `config.yml` as the single source of truth for all input/output paths and pipeline settings.
+- Replaced the regex-parsing orchestrator with a cleaner config-injection model.
+- Fixed the LEfSe write leak (`04_differential_analysis.R`) that previously wrote directly into the read-only `BGI_Result/` directory.
+- Fixed unguarded hardcoded paths in `13_network.R` and `14_enterotypes.R`.
+- Added CLI options via `optparse` to allow standalone scripts to run with `--config`, `--comparison`, and `--output-dir` flags.
 
 ### 2026-04-13: Network Module Parity
 - Implemented strict group-based sample subsetting (fixed "all samples" bug)

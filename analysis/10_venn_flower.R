@@ -15,10 +15,13 @@ library(VennDiagram)
 library(UpSetR)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("venn_dir") || is.null(venn_dir)) venn_dir <- "../BGI_Result/Venn"
-if (!exists("flower_dir") || is.null(flower_dir)) flower_dir <- "../BGI_Result/Flower"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+meta_file  <- cfg$input$metadata
+venn_dir   <- cfg$output$venn
+flower_dir <- cfg$output$flower
 dir.create(venn_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(flower_dir, showWarnings = FALSE, recursive = TRUE)
 

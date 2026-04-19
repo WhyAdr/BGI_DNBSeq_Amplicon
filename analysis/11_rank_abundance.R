@@ -10,10 +10,13 @@ library(ggplot2)
 library(vegan)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("rank_dir") || is.null(rank_dir)) rank_dir <- "../BGI_Result/OTU_Rank"
-if (!exists("cumul_dir") || is.null(cumul_dir)) cumul_dir <- "../BGI_Result/Cumulative_Curve"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file  <- cfg$input$otu_table
+meta_file <- cfg$input$metadata
+rank_dir  <- cfg$output$rank
+cumul_dir <- cfg$output$cumulative
 dir.create(rank_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(cumul_dir, showWarnings = FALSE, recursive = TRUE)
 

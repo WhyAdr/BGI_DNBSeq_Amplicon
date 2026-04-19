@@ -10,9 +10,12 @@ library(vegan)
 library(ggplot2)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Beta"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+meta_file  <- cfg$input$metadata
+output_dir <- cfg$output$beta
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 comp_suffix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "") comp_suffix else "ALL"

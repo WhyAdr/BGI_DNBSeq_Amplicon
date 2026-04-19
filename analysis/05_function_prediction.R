@@ -11,9 +11,12 @@ library(reshape2)
 
 # --- Configuration ---
 # PICRUSt2 predicts gene families and metabolic pathways from marker genes.
-if (!exists("kegg_file") || is.null(kegg_file)) kegg_file <- "../BGI_Result/Picrust/Function_Prdeict/KO/ko_Level2_Function.xls"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Picrust"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+kegg_file  <- file.path(cfg$input$picrust_dir, "KO", "ko_Level2_Function.xls")
+meta_file  <- cfg$input$metadata
+output_dir <- cfg$output$picrust
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---

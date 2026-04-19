@@ -15,9 +15,12 @@ library(ade4)
 library(ggplot2)
 
 # --- Configuration ---
-if (!exists("otu_file") || is.null(otu_file)) otu_file <- "../BGI_Result/OTU/OTU_table_for_biom.txt"
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Enterotypes"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+otu_file   <- cfg$input$otu_table
+meta_file  <- cfg$input$metadata
+output_dir <- cfg$output$enterotypes
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # --- Data Loading ---
@@ -33,7 +36,7 @@ metadata <- metadata[common_samples, , drop = FALSE]
 
 # --- Genus-level aggregation (enterotyping is typically at genus level) ---
 # Use L6 file (genus level) if available
-l6_file <- "../BGI_Result/OTU/OTU_table_L6.txt"
+l6_file <- file.path(cfg$input$otu_dir, "OTU_table_L6.txt")
 if (file.exists(l6_file)) {
     genus <- read.table(l6_file, header = TRUE, row.names = 1, check.names = FALSE,
                         sep = "\t", comment.char = "")

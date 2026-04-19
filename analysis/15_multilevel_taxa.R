@@ -12,9 +12,12 @@ library(ggplot2)
 library(reshape2)
 
 # --- Configuration ---
-if (!exists("meta_file") || is.null(meta_file)) meta_file <- "../metadata.tsv"
-if (!exists("otu_dir") || is.null(otu_dir)) otu_dir <- "../BGI_Result/OTU"
-if (!exists("output_dir") || is.null(output_dir)) output_dir <- "../BGI_Result/Barplot"
+source("utils/load_config.R")
+if (!exists("cfg")) cfg <- load_config()
+
+meta_file  <- cfg$input$metadata
+otu_dir    <- cfg$input$otu_dir
+output_dir <- cfg$output$barplot
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
