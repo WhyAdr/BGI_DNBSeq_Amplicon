@@ -11,7 +11,7 @@ cat("BGI Amplicon Workflow - Group-wise Analysis Runner\n")
 cat("==================================================================\n\n")
 
 source("utils/load_config.R")
-base_cfg <- load_config("../config.yml")
+base_cfg <- load_config()
 
 # --- Load full metadata ---
 metadata <- read.table(base_cfg$input$metadata, header = TRUE, sep = "\t", check.names = FALSE)
