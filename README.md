@@ -1,6 +1,6 @@
 # BGI DNBSeq Amplicon Analysis Pipeline
 
-An R-based pipeline for reproducing BGI's 16S/ITS amplicon analysis workflow from raw OTU tables to publication-ready figures. Implements all 18 statistical modules described in BGI's standard amplicon report, with automated group-wise comparison execution across 11 sample groupings.
+An R-based pipeline for reproducing BGI's 16S/ITS amplicon analysis workflow from raw OTU tables to publication-ready figures. Implements 18 statistical modules described in BGI's standard amplicon report (with 17 running automatically in the group-wise execution loop across 11 sample groupings).
 
 ## Overview
 
@@ -95,7 +95,7 @@ cd analysis
 # 1. Install dependencies (first time only)
 Rscript install_packages.R
 
-# 2. Run the full pipeline (18 scripts × 11 comparisons)
+# 2. Run the full pipeline (17 scripts × 11 comparisons, excludes 06_advanced_analysis.R)
 Rscript 00_run_all_groups.R
 ```
 
@@ -103,7 +103,7 @@ Rscript 00_run_all_groups.R
 
 1. Reads `metadata.tsv` and iterates through 11 predefined group comparisons (A-B, A-C, ..., all 17 groups)
 2. For each comparison, creates a subset metadata file
-3. Sources each of the 18 analysis scripts in a sandboxed R environment
+3. Sources 17 analysis scripts in a sandboxed R environment (excluding `06_advanced_analysis.R` by default)
 4. Injects output directory overrides to route results to `BGI_Reproduced/`
 5. Reports OK/ERROR status for each script-comparison pair
 
@@ -139,9 +139,21 @@ The pipeline reads from `BGI_Result/` (gitignored, not included in this reposito
 
 - **Path injection:** All scripts use `if (!exists("var") || is.null(var))` guards, enabling the master wrapper to redirect outputs to `BGI_Reproduced/` while keeping `BGI_Result/` read-only.
 - **Input/output separation:** The wrapper explicitly excludes input-only directories (`otu_dir`, `base_dir`, `tree_dir_*`) from output redirection to avoid breaking file discovery.
-- **Explicit namespacing:** `vegan::diversity()` and `igraph::degree()` are explicitly namespaced to prevent function masking when `caret`, `randomForest`, or `psych` load competing generics in the same session.
+- **Explicit namespacing:** Function calls like `vegan::diversity()` and `vegan::estimateR()` are explicitly namespaced to prevent unexpected function masking when `igraph`, `caret`, `randomForest`, or `psych` load competing generics in the same session.
 - **Defensive loading:** `make.unique()` is used for row names in PICRUSt tables where duplicate pathway IDs exist in BGI deliverables.
 - **DCA fallback:** `decorana()` is wrapped in `tryCatch` — comparisons where DCA fails to converge (high sparsity) gracefully fall back to RDA.
+
+## Recent Updates to Achieve 1:1 BGI Parity
+
+The pipeline was rigorously overhauled to guarantee 1:1 structural, numerical, and aesthetic parity with BGI deliverables. Recent patches include:
+
+- **Network Module Parity (`13_network.R`)**: Implemented strict group-based sample subsetting, mandatory species-level aggregation before correlation reporting, generated exact Species Abundance matrices (including the aggregated "Other" tier), and applied professional Cytoscape-like visual topologies (phylum-based node colors, bold outward labels, curved pink/blue weighted edges).
+- **Directory Flattening (`00_run_all_groups.R`)**: Expanded the whitelist to output `Alpha_Rarefaction`, `PLSDA`, `Alpha_Box`, `PCA`, and `Cumulative_Curve` completely flat without group subdirectories, matching BGI's flat output reporting structure.
+- **Robustness in Edge Groups**: Fixed out-of-bounds PCoA matrix dimension mapping crashes for subsets experiencing very low *N* parameters, and solved missing arrays in native PLS-DA scripts.
+- **Workflow Scope (`06_advanced_analysis.R`)**: Extracted the Advanced Analysis Random Forest module from the automated 00_ orchestrator loop per user requirement, retaining its capability solely for manual ad-hoc usage.
+- **Aesthetics & Statistics**: Formatted `18_nmds.R` to feature exact BGI aesthetic frames and attached the missing ANOSIM test executions natively into `09_similarity_tests.R`.
+- **Automated Routing & Sandboxing**: Directed tricky internal PICRUSt prediction and generic `diff_dir` logic to adhere strictly to injected parameters, assuring everything strictly writes to `BGI_Reproduced/` while treating `BGI_Result/` as robustly read-only.
+
 
 ## Group Comparisons
 
