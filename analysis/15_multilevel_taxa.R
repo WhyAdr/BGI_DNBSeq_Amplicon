@@ -1,15 +1,16 @@
 # ==============================================================================
 # 15_multilevel_taxa.R
-# BGI Amplicon Workflow - Multi-level Taxonomic Barplots (L2-L7)
+# BGI Amplicon Workflow - Taxonomic Barplots (Family & Genus)
 # ==============================================================================
-# Replicates full BGI Barplot directory across all classification levels.
+# Replicates BGI Barplot directory for Family (L5) and Genus (L6) levels.
 # Software reference: R v3.4.1 per BGI report.
-# Produces sample-level AND group-level barplots at every level.
+# Produces sample-level AND group-level barplots at these levels.
 # Species < 0.5% relative abundance consolidated to "Others" (per BGI).
 # ==============================================================================
 
 library(ggplot2)
 library(reshape2)
+library(pheatmap)
 
 # --- Configuration ---
 source("utils/load_config.R")
@@ -18,13 +19,16 @@ if (!exists("cfg")) cfg <- load_config()
 meta_file  <- cfg$input$metadata
 otu_dir    <- cfg$input$otu_dir
 output_dir <- cfg$output$barplot
+heatmap_dir <- cfg$output$heatmap
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(heatmap_dir, showWarnings = FALSE, recursive = TRUE)
+
+prefix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "") paste0(comp_suffix, ".") else ""
 
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
 
-level_names <- c("L2" = "Phylum", "L3" = "Class", "L4" = "Order",
-                 "L5" = "Family", "L6" = "Genus", "L7" = "Species")
+level_names <- c("L5" = "Family", "L6" = "Genus")
 
 # --- BGI-style custom pastel/rainbow palette (~35 colors) ---
 # Derived from BGI's observed color ordering across Phylum and Genus barplots.
@@ -135,9 +139,9 @@ for (lvl in names(level_names)) {
         p_sample <- p_sample + facet_grid(~ Group, scales = "free_x", space = "free_x")
     }
 
-    ggsave(file.path(output_dir, paste0("Barplot.Sample.", lvl, ".", level_names[lvl], ".png")),
+    ggsave(file.path(output_dir, paste0(prefix, "Barplot.Sample.", lvl, ".", level_names[lvl], ".png")),
            p_sample, width = 16, height = 8)
-    ggsave(file.path(output_dir, paste0("Barplot.Sample.", lvl, ".", level_names[lvl], ".pdf")),
+    ggsave(file.path(output_dir, paste0(prefix, "Barplot.Sample.", lvl, ".", level_names[lvl], ".pdf")),
            p_sample, width = 16, height = 8)
 
     # --- Group-level Barplot ---
@@ -159,29 +163,50 @@ for (lvl in names(level_names)) {
             theme_bgi_barplot() +
             guides(fill = guide_legend(ncol = 3, reverse = TRUE))
 
-        ggsave(file.path(output_dir, paste0("Barplot.Group.", lvl, ".", level_names[lvl], ".png")),
+        ggsave(file.path(output_dir, paste0(prefix, "Barplot.Group.", lvl, ".", level_names[lvl], ".png")),
                p_group, width = 10, height = 7)
-        ggsave(file.path(output_dir, paste0("Barplot.Group.", lvl, ".", level_names[lvl], ".pdf")),
+        ggsave(file.path(output_dir, paste0(prefix, "Barplot.Group.", lvl, ".", level_names[lvl], ".pdf")),
                p_group, width = 10, height = 7)
 
         # Export group-level barplot data
-        group_wide <- as.data.frame(t(aggregate(t(plot_mat[, common]),
-                      by = list(Group = meta_sub$Group), FUN = mean)[, -1]))
-        colnames(group_wide) <- sort(unique(meta_sub$Group))
+        agg_res <- aggregate(t(plot_mat[, common]), by = list(Group = meta_sub$Group), FUN = mean)
+        group_names <- agg_res$Group
+        group_wide <- as.data.frame(t(agg_res[, setdiff(colnames(agg_res), "Group"), drop = FALSE]))
+        colnames(group_wide) <- group_names
         rownames(group_wide) <- rownames(plot_mat)
         group_export <- data.frame(Taxon = display_labels, group_wide, check.names = FALSE)
         write.table(group_export,
-            file.path(output_dir, paste0("Group.", lvl, ".", level_names[lvl], ".Barplot.xls")),
+            file.path(output_dir, paste0(prefix, "Group.", lvl, ".", level_names[lvl], ".Barplot.xls")),
             sep = "\t", row.names = FALSE, quote = FALSE)
     }
 
     # --- Export sample-level data tables ---
     sample_export <- data.frame(Taxon = display_labels, plot_mat, check.names = FALSE)
     write.table(sample_export,
-                file.path(output_dir, paste0("Sample.", lvl, ".", level_names[lvl], ".Barplot.xls")),
+                file.path(output_dir, paste0(prefix, "Sample.", lvl, ".", level_names[lvl], ".Barplot.xls")),
                 sep = "\t", row.names = FALSE, quote = FALSE)
 
-    cat(sprintf("  Completed %s (%s) - %d taxa plotted.\n", lvl, level_names[lvl], nrow(plot_mat)))
+    # --- Heatmap (Top 10 Named Taxa Only) ---
+    # Per user preference: strictly top 10 named families/genera (exclude "Others")
+    heatmap_mat <- plot_mat[top_taxa, , drop = FALSE]
+    heatmap_labels <- strip_taxa_prefix(rownames(heatmap_mat))
+    rownames(heatmap_mat) <- make.unique(heatmap_labels)
+
+    # Calculate data-driven pseudo-count (matching 03_taxa_composition logic)
+    pseudo_count <- min(heatmap_mat[heatmap_mat > 0]) * 0.5
+    if(is.na(pseudo_count) || pseudo_count == 0) pseudo_count <- 1e-5
+
+    # Euclidean distance with complete-linkage clustering
+    pheatmap(log10(heatmap_mat + pseudo_count),
+             cluster_cols = TRUE, cluster_rows = TRUE,
+             clustering_distance_rows = "euclidean",
+             clustering_distance_cols = "euclidean",
+             clustering_method = "complete",
+             main = paste0("Top 10 ", level_names[lvl], " Heatmap (log10)"),
+             filename = file.path(heatmap_dir, paste0(prefix, "Heatmap.", lvl, ".", level_names[lvl], ".png")),
+             width = 10, height = 8)
+
+    cat(sprintf("  Completed %s (%s) - %d taxa plotted and heatmap generated.\n", lvl, level_names[lvl], nrow(plot_mat)))
 }
 
 print("Multi-level taxonomic barplot analysis complete.")
