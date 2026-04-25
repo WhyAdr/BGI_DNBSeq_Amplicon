@@ -1,10 +1,10 @@
 # ==============================================================================
 # 15_multilevel_taxa.R
-# BGI Amplicon Workflow - Taxonomic Barplots (Family & Genus)
+# BGI Amplicon Workflow - Multi-level Taxonomic Barplots (L2-L7)
 # ==============================================================================
-# Replicates BGI Barplot directory for Family (L5) and Genus (L6) levels.
+# Replicates full BGI Barplot directory across all classification levels.
 # Software reference: R v3.4.1 per BGI report.
-# Produces sample-level AND group-level barplots at these levels.
+# Produces sample-level AND group-level barplots at every level.
 # Species < 0.5% relative abundance consolidated to "Others" (per BGI).
 # ==============================================================================
 
@@ -28,7 +28,8 @@ prefix <- if (exists("comp_suffix") && !is.null(comp_suffix) && comp_suffix != "
 metadata <- read.table(meta_file, header = TRUE, sep = "\t", check.names = FALSE)
 rownames(metadata) <- metadata[,1]
 
-level_names <- c("L5" = "Family", "L6" = "Genus")
+level_names <- c("L2" = "Phylum", "L3" = "Class", "L4" = "Order",
+                 "L5" = "Family", "L6" = "Genus", "L7" = "Species")
 
 # --- BGI-style custom pastel/rainbow palette (~35 colors) ---
 # Derived from BGI's observed color ordering across Phylum and Genus barplots.
